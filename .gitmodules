@@ -1,0 +1,3 @@
+[submodule "ThirdParty/RENT"]
+	path = ThirdParty/RENT
+	url = git@github.com:alabamagan/RENT.git
