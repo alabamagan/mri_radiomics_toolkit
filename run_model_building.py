@@ -14,6 +14,7 @@ from scipy.stats import *
 
 import numpy as np
 import multiprocessing as mpi
+from tqdm.auto import *
 from functools import partial
 from RENT import RENT, stability
 
@@ -75,7 +76,7 @@ def compute_ICC(featset_A: pd.DataFrame,
     """
     assert featset_A.index.nlevels == featset_B.index.nlevels == 3, \
         "The dataframe should be arranged with multi-index: ['Pre-processing', 'Feature_Group', 'Feature_Name']"
-    global logger
+    logger = MNTSLogger['ICC']
 
     featset_A['Segmentation'] = "A"
     featset_B['Segmentation'] = "B"
@@ -134,9 +135,9 @@ def compute_ICC(featset_A: pd.DataFrame,
     KK = KK.sort_index(level=0)
     return KK, outted_features
 
-def _get_feat_list_thres_w_ICC(featset_A: pd.DataFrame,
-                               featset_B: pd.DataFrame,
-                               ICC_threshold: Optional[float] = 0.9) -> pd.DataFrame:
+def ICC_thres_filter(featset_A: pd.DataFrame,
+                     featset_B: pd.DataFrame,
+                     ICC_threshold: Optional[float] = 0.9) -> pd.DataFrame:
     r"""
     Wrapper function for convinience
     `featset_A/B` columns should be patient identifiers, and rows should be features.
@@ -236,20 +237,21 @@ def initial_feature_filtering(features_a: pd.DataFrame,
     var_feats_b_index = features_b.index[var_filter.get_support()]
     # Only those that fulfilled the variance threshold in both set of features are to be included
     mutual_features = set(var_feats_a_index) & set(var_feats_b_index)
-    logger.info(f"Features Kept: {mutual_features}")
-    logger.info(f"Features Discarded: {set(features_a.index) - set(mutual_features)}")
+    logger.info(f"{len(mutual_features)} features kept: \n{mutual_features}")
+    logger.info(f"{len(set(features_a.index) - set(mutual_features))} features discarded: \n"
+                f"{set(features_a.index) - set(mutual_features)}")
 
-    # # Filter features by ICC
-    # logger.info("Dropping features by their intra-observer segmentation ICC")
-    # _icc90_feats = _get_feat_list_thres_w_ICC(features_a.loc[mutual_features],
-    #                                           features_b.loc[mutual_features], 0.9)
-    #
-    # # Compute p-values of features
-    # icc90_feats_a = features_a.loc[_icc90_feats]
-    # icc90_feats_b = features_b.loc[_icc90_feats]
+    # Filter features by ICC
+    logger.info("Dropping features by their intra-observer segmentation ICC")
+    _icc90_feats = ICC_thres_filter(features_a.loc[mutual_features],
+                                    features_b.loc[mutual_features], 0.9)
+
+    # Compute p-values of features
+    icc90_feats_a = features_a.loc[_icc90_feats]
+    icc90_feats_b = features_b.loc[_icc90_feats]
     #!! Temp, enable upper commented lines when done, the lower two line saves time by skipping ICC
-    icc90_feats_a = features_a.loc[mutual_features]
-    icc90_feats_b = features_b.loc[mutual_features]
+    # icc90_feats_a = features_a.loc[mutual_features]
+    # icc90_feats_b = features_b.loc[mutual_features]
 
     # Filter out features with not enough significance
     p_thres = .001
@@ -266,10 +268,11 @@ def supervised_features_selection(features: pd.DataFrame,
                                   alpha: Union[float, Iterable[float]],
                                   l1_ratio: Union[float,Iterable[float]],
                                   *args,
-                                  criteria_threshold: Iterable[float] = (0.95, 0.95, 0.995),
+                                  criteria_threshold: Iterable[float] = (0.8, 0.8, 0.99),
                                   n_features: int = None,
                                   n_splits: int = 5,
                                   n_trials: int = 100,
+                                  boosting: bool = True,
                                   **kwargs):
     r"""
     Use RENT [1] to select features. Essentially `n_trials` models were trained using the features and targets, and
@@ -298,9 +301,9 @@ def supervised_features_selection(features: pd.DataFrame,
 
     """
     logger = MNTSLogger['sup-featselect']
-    #==========
-    # Run RENT|
-    #==========
+    #|==========|
+    #| Run RENT |
+    #|==========|
 
     # C in RENT is the inverse of regularization term alpha in scipy
     C = 1/alpha
@@ -309,8 +312,12 @@ def supervised_features_selection(features: pd.DataFrame,
     C = np.asarray([C]) if type(C) == float else C
     l1_ratio = np.asarray([l1_ratio]) if type(l1_ratio) == float else l1_ratio
 
-    # Align targets and features, assume features.columns $\in$ targets.index
-    _targets = targets.loc[features.columns]
+    # Align targets and features, assume target.index $\in$ features.columns
+    if not targets.index.to_list() == features.columns.to_list():
+        logger.warning("Discrepancy found in case identifiers in target and features, trying to align them!")
+        _targets = targets.loc[features.columns]
+    else:
+        _targets = targets
 
     # Convert model names into strings
     _features_names = ['__'.join(i) for i in features.index]
@@ -318,20 +325,6 @@ def supervised_features_selection(features: pd.DataFrame,
     _map = {_f: o for _f, o in zip(_features_names, _ori_index)}
     features.index = _features_names
 
-    # model = RENT.RENT_Classification(data=pd.DataFrame(features.T),
-    #                                  target=_targets[_targets.columns[0]].to_numpy().ravel(),
-    #                                  feat_names=_features_names,
-    #                                  C=C,
-    #                                  l1_ratios=l1_ratio,
-    #                                  autoEnetParSel=False,
-    #                                  poly='OFF',
-    #                                  testsize_range=(1/float(n_splits), 1/float(n_splits)),
-    #                                  scoring='mcc',
-    #                                  classifier='logreg',
-    #                                  K=n_trials,
-    #                                  random_state=0,
-    #                                  verbose=1,
-    #                                  scale=False)   # We have already done standard scalar somewhere else
 
     model = RENT.RENT_Regression(data=pd.DataFrame(features.T),
                                  target=_targets[_targets.columns[0]].to_numpy().ravel(),
@@ -344,15 +337,16 @@ def supervised_features_selection(features: pd.DataFrame,
                                  K=n_trials,
                                  random_state=0,
                                  verbose=1,
-                                 scale=False)
+                                 scale=False,
+                                 boosting=boosting) # BRENT or RENT
     model.train()
     selected_features = model.select_features(*criteria_threshold)
     selected_features = features.index[selected_features]
     logger.info(f"RENT features: {selected_features}")
 
-    #========================
-    # Feature select features
-    #========================
+    #|=========================|
+    #| Feature select features |
+    #|=========================|
     # Conver the coeffients to weights
     coefs_df = pd.DataFrame(np.concatenate(model._weight_list, axis=0).T, index=_features_names)
     coefs_df = coefs_df.loc[selected_features]
@@ -364,39 +358,9 @@ def supervised_features_selection(features: pd.DataFrame,
     mean_ranks = (coefs_df.shape[0] - coefs_df.T.mean().argsort()) # smaller rank is better
     var_ranks = coefs_df.T.std().argsort() # smaller rank is better
     avg_ranks = (mean_ranks + 0.5 * var_ranks) / 1.5
-    # avg_ranks = (mean_ranks)
 
-    # For the first `n_feature` ranks, remove the lower rank features with pearson's corr higher than 0.5. Repeat until
-    # There are no off-diagonal elements of the correlation matrix
-    corr_thres = 0.6
-    # Compute corr matrix for first loop.
+    # remove lower rank features
     _init_features_index = avg_ranks.sort_values()[:n_features]
-    # _cor = features.loc[_init_features_index.index].T.corr()
-    # while _check_cor_mat(_cor.to_numpy(), lambda x: np.abs(x) > corr_thres):
-    #     # Extract pairs with higher correlation than the threshold
-    #     _cor_np = np.tril(_cor.to_numpy(), -1)
-    #     _pairs = np.argwhere(np.abs(_cor_np) > corr_thres)
-    #
-    #     # Get rid of the one with a larger rank from avg_ranks (worse stability)
-    #     for (i, j) in _pairs:
-    #         # check if avg still has enough features
-    #         if len(avg_ranks) <= n_features:
-    #             logger.info("Breaking because enough features have been discarded."
-    #                         "There might be features left with strong correlations.")
-    #             break
-    #         _get_rid = max(i, j)
-    #         _get_rid = _cor.index[_get_rid]
-    #         try:
-    #             avg_ranks.drop(_get_rid, inplace=True)
-    #         except:
-    #             # Ignore if its already dropped
-    #             pass
-    #     if len(avg_ranks) <= n_features:
-    #         break
-    #
-    #     # Update _cor
-    #     _init_features_index = avg_ranks.sort_values()[:n_features]
-    #     _cor = features.loc[_init_features_index.index].T.corr()
 
     # Construct the suggested features
     features.index = _ori_index
@@ -428,14 +392,15 @@ def features_normalization(features):
     normed = pd.DataFrame(normed.T, columns=features.columns, index=features.index)
     return normed
 
-def model_building(features_a: pd.DataFrame,
-                   features_b: pd.DataFrame,
-                   targets: pd.DataFrame,
-                   dim_reduction_methods: Optional[str] = 'LASSO'):
+def run_features_selection(features_a: pd.DataFrame,
+                           features_b: pd.DataFrame,
+                           targets: pd.DataFrame,
+                           n_trials = 500):
     r"""
-
-
-
+    Features selection wrapper function, execute:
+    1. initial feature filtring `initial_feature_filtering`
+    2. normalization of features `features_normalization`
+    3. RENT/BRENT `supervised_features_selection`
 
     Args:
         features_a:
@@ -449,36 +414,64 @@ def model_building(features_a: pd.DataFrame,
     """
     logger = MNTSLogger['model_building']
 
-
+    # Initial feature filtering using quantitative methods
     feats_a, feats_b = initial_feature_filtering(features_a, features_b, targets)
+    # Note: Because initial feature filtering relies on variance and ICC, it is not proper to normalize the data prior
+    #       to this because it alters the mean and variance of the features.
+
+
+    # Normalize remaining features for data-driven feature selection
     feats_a, feats_b = features_normalization(feats_a), features_normalization(feats_b)
 
-    # Create CV splitter, note that [`targets` ∩ `feats_a.columns`] == `feats_a`; `feats_a` ∈ `targets`
-    splitter = StratifiedKFold(n_splits=7, shuffle=True)
-    #splitter = splitter.split(feats_a.columns, targets.loc[feats_a.columns][targets.columns[0]])
-
+    # Supervised feature selection using RENT
     alpha = np.asarray([0.01, 0.1, 1])
     l1_ratio = np.asarray([0, 0.2, 0.4, 0.6, 0.8, 1.0])
     feats_a_out = supervised_features_selection(feats_a, targets,
-                                            0.02,
-                                            0.5,
-                                            n_trials=10,
-                                            n_features=25)
+                                                0.02,
+                                                0.5,
+                                                criteria_threshold=(0.9, 0.5, 0.99),
+                                                n_trials=n_trials,
+                                                n_features=25)
     logger.info(f"in features: \n{feats_a.sort_index(level=0)}")
     logger.info(f"The selected features: \n{feats_a_out}")
+    # classification models
     return feats_a_out
 
+
+def run_cv_grid_search(features: pd.DataFrame,
+                       targets: pd.DataFrame):
+    r"""
+    Grid search for best hyper-parameters for the following linear models:
+      * SVM
+      * Logistic regresion
+      * Random forest
+      * K-nearest-neighbour
+      * Elastic Net
+
+    Args:
+        features:
+        targets:
+
+    Returns:
+
+    """
     clf = pipeline.Pipeline([
-        ('normalization', preprocessing.StandardScaler()),
-        ('feature_selection', 'passthrough'),
         ('classification', 'passthrough')
     ])
     param_grid =[
         {
-            'classification': [linear_model.ElasticNet(max_iter=2500, warm_start=False)],
-            'classification__alpha': np.linspace(.01, 0.05, 6),
-            'classification__tol': [.001],
-            'classification__l1_ratio': np.linspace(0, 1, 11)
+            'classification': [svm.SVR(tol=1E-4, max_iter=3500)],
+            'classification__C': [0.1, 1, 10],
+            'classification__degree': [3, 5, 7, 9],
+            'classification__epsilon': [1, 0.1, 0.01]
+        },
+        {
+            'classification': [linear_model.ElasticNet(tol=1E-4, max_iter=3500)],
+            'classification__alpha': [.02, .002],
+            'classification__l1_ratio': [0.2, 0.5, 0.8]
+        },
+        {
+            'classification': []
         }
     ]
 
@@ -542,35 +535,66 @@ def main():
 
     # Split the features into 5-folds with stratification to the status of malignancy
     splitter = StratifiedKFold(n_splits=5, shuffle=True)
-    splits = splitter.split(status.index, status[status.columns[0]])
-    fold_configs = {}
-    for fold, (train_index, test_index) in enumerate(splits):
-        train_ids, test_ids = [str(status.index[i]) for i in train_index],\
-                              [str(status.index[i]) for i in test_index]
-        train_ids.sort()
-        test_ids.sort()
-        fold_configs[fold] = (train_ids, test_ids)
+    outer_dict = {}
+    outer_list = []
+    for k in range(50):
+        logger.info(f"=== Running {k} ===")
+        selected_features_list = []
+        splits = splitter.split(status.index, status[status.columns[0]])
+        fold_configs = {}
+        for fold, (train_index, test_index) in enumerate(splits):
+            train_ids, test_ids = [str(status.index[i]) for i in train_index], \
+                                  [str(status.index[i]) for i in test_index]
+            train_ids.sort()
+            test_ids.sort()
+            fold_configs[fold] = (train_ids, test_ids)
 
-    #!! Loop each fold
-    for fold, (train_ids, test_ids) in fold_configs.items():
-        # Seperate traing and test features
-        train_feat_a = features_a.T.loc[train_ids].T
-        train_feat_b = features_b.T.loc[train_ids].T
-        test_feat_a = features_a.T.loc[test_ids].T
-        test_feat_b = features_b.T.loc[test_ids].T
+        #!! Loop each fold
+        for fold, (train_ids, test_ids) in fold_configs.items():
+            # Seperate traing and test features
+            train_feat_a = features_a.T.loc[train_ids].T
+            train_feat_b = features_b.T.loc[train_ids].T
+            test_feat_a = features_a.T.loc[test_ids].T
+            test_feat_b = features_b.T.loc[test_ids].T
 
-        selected_features = model_building(train_feat_a, train_feat_b, status)
-        selected_features.to_excel(f'./output/selected_features_{fold}.xlsx')
-        #save the features
+            # |======================|
+            # | 2. Feature selection |
+            # |======================|
 
-        # |======================|
-        # | 2. Feature selection |
-        # |======================|
+            selected_features = run_features_selection(train_feat_a, train_feat_b, status, n_trials=500)
+            selected_features.to_excel(f'./output/selected_features_{fold}.xlsx')
+            #save the features
+            selected_features_list.append(['__'.join(i) for i in selected_features.index])
 
-        # Filter features by p-val
+        outer_list.extend(selected_features_list)
+        union_features = set.union(*[set(i) for i in selected_features_list])
+        features_frequencies = {i: 0 for i in union_features}
+        for i in union_features:
+            for j in selected_features_list:
+                if i in j:
+                    features_frequencies[i] += 1
+        features_frequencies = pd.Series(features_frequencies, name=f'frequencies_{k}')
+        outer_dict[k] = features_frequencies
+        logger.info(f"Feature_Summary: {features_frequencies.to_string()}")
+        logger.info(f"=== Done {k} === ")
 
+    # For outer loop
+    union_features = set.union(*[set(i) for i in outer_list])
+    features_frequencies = {i: 0 for i in union_features}
+    for i in union_features:
+        for j in outer_list:
+            if i in j:
+                features_frequencies[i] += 1
+    features_frequencies = pd.Series(features_frequencies, name='frequencies_all')
+    logger.info(f"Feature_Summary: {features_frequencies.to_string()}")
 
-        # Select features by LASSO/Elastic-net/Ridge/mrmr
+    features_frequencies = features_frequencies.to_frame()
+    for k in outer_dict:
+        _right = outer_dict[k].to_frame()
+        features_frequencies = features_frequencies.join(_right, how='outer')
+    features_frequencies.fillna(0, inplace=True)
+    features_frequencies.to_excel(f"./output/selected_feat_freq.xlsx")
+
 
         # |===================|
         # | 3. Model building |
