@@ -15,12 +15,9 @@ As for NPC, the Axial MRIs are commonly scanned using a thick slice configuratio
 * tqdm >= 4.48.2
 * mri-normalization-toolkit >= 0.1
 
-
-
 # Index
 
 [TOC]
-
 
 # Feature Extraction
 
@@ -32,8 +29,9 @@ python run_pyradiomics.py -ios [-pgv] [--keep-log]
 
 ### Parameters
 
+
 |     Option | Argument   | Description                                                                                                   |
-| ---------: | ---------- | :------------------------------------------------------------------------------------------------------------ |
+| -----------: | ------------ | :-------------------------------------------------------------------------------------------------------------- |
 |         -i | img_dir    | Input images directory.                                                                                       |
 |         -s | seg_dir    | Segmentation images directory.                                                                                |
 |         -o | output     | Directory for storing the computed radiomics features.                                                        |
@@ -60,9 +58,7 @@ graph LR
   C --> D
   D --> E[Nyul<br>Norm]
   C --> E
-  E --> F["Linear Rescale<br>N(5000, 2500)"]
-  C --> F
-  F --> G["Intensity<br>Rebinning<br>(0 - 255)"]
+
 ```
 
 <details>
@@ -112,13 +108,27 @@ imageType:
   LBP2D:
     lbp2DRadius: 0.4492
     lbp2DMethod: 'default'
+    force2D: True
   LBP3D:
     lbp3DIcosphereRadius : 0.4492
   LoG:
     sigma: [0.4492, 0.4492, 0.4492]
+  Gradient: {}
+  Exponential: {}
 
 featureClass:
   firstorder:
+    - Energy
+    - Entropy
+    - Kurtosis
+    - Maximum
+    - MeanAbsoluteDeviation
+    - Mean
+    - RobustMeanAbsoluteDeviation
+    - RootMeanSquared
+    - Skewness
+    - Uniformity
+    - Variance
   shape:
   glcm:
   glrlm:
@@ -126,6 +136,7 @@ featureClass:
 setting:
   resampledPixelSpacing: [0.4492, 0.4492, 0.4492]
   preCrop: True
+
 ```
 
 ### v1-Flowchart
@@ -143,6 +154,7 @@ flowchart LR
     C["LBP-2D"]
     D["LBP-3D"]
     E["Log"]
+    F["Exponential"]
   end
   A --> Preprocessing --> ImageType
 ```
@@ -154,8 +166,6 @@ flowchart LR
 ```bash
 python run_model_building.py
 ```
-
-
 
 ## Features Filtration
 
@@ -217,16 +227,10 @@ Model complexity generally have to do with the number of trainable parameters in
 #### Methods to mitigate overfitting
 
 1. Using a validation set in combination of early stopping
-
 2. Reduce the model complexity, i.e., either reduce the number of features or number of trainable parameters.
-
 3. Increase the sample size (*You don't say*).
-
 4. Noise injection during training.
-
 5. Using boosting techniques[^2] (But the understanding as to why this helps is unclear[^1]. Also boosting works worse if there are noises, so it is not recommended to use it with noise injection.)
-
-   
 
 ![](./img/Training-validation.png)
 
@@ -269,8 +273,6 @@ flowchart LR
 
 For instance, just from this graph, there are 60 possible combinations, and each of these models has its own hyper-parameters to tune, this crank up to a daunting number of runs. In addition, running hyper-parameter tuning requires K-fold cross-validation to get a more reliable result. It is simply impossible to try all the combinations. Thus, we need a systematic way to select from these models, while subject the constrain of avoiding overfitting with the optimal performance. Of course, there are currently no standard to this, people just brute force their way through by trying as many combination as possible, or ignore the problem entirely and given up on supporting their arbitrary decisions with any sort of subjective evidence.
 
-
-
 #### Workflow
 
 The model building should be divided into two parts:
@@ -282,11 +284,12 @@ The model building should be divided into two parts:
 
 The experiment table should look like this:
 
-| Trials  | Pipeline 1 | Pipeline 2 | ...  |
-| ------- | :--------: | :--------: | :--: |
-| Trial 1 | mean AUCs  | mean AUCs  | ...  |
-| Trial 2 |     --     |     --     | ...  |
-| ...     |    ...     |    ...     | ...  |
+
+| Trials  | Pipeline 1 | Pipeline 2 | ... |
+| --------- | :----------: | :----------: | :---: |
+| Trial 1 | mean AUCs | mean AUCs | ... |
+| Trial 2 |     --     |     --     | ... |
+| ...     |    ...    |    ...    | ... |
 
 The experiments should be based on this framework. Multiple trials should be ran using this flow.
 
@@ -294,17 +297,16 @@ The experiments should be based on this framework. Multiple trials should be ran
 flowchart LR
   A[(Input<br>Subjects)]   
   subgraph Outer["Outer K-fold (Model performance evaluation)"]
-    subgraph Inner["Inner K-fold (Model building)"]
-      G[K-fold<br>splitter]
-      B[(Training set)]
-      C[(Testing set)]
-
+    subgraph Inner["Inner bootstrap (feature selection)"]
+      G[Bootstrapper]
+      B[BRENT]
+      N[Initial filtering]
+	  G --> N --> B
+	  B --> |<br>Repeat|G
     end
     E[Hold-out <br>splitter]
     D[(Hold-out<br>set)]
-
-    G --> B & C
-  Inner ---> K[Select best<br>features set<br>and re-train<br>model]
+    Inner --> K[Select best<br>features set<br>and re-train<br>model]
   end  
   A --> E
   E --> G
@@ -321,10 +323,8 @@ flowchart LR
   * [ ] Logistic regression
   * [ ] Random forest
   * [ ] K nearest neighbour
-  * [x] Elastic Net
+  * [X] Elastic Net
     * For each run, record the rank of coefficients magnitude, average the ranks across several trials and us only 10 features
-
-
 
 ### Supervised feature selection
 
@@ -336,15 +336,47 @@ Based on the idea of ensembles, the authors focused the distribution of features
 2. To which degree do the feature weights alternate between positive and negative values? ($\tau_2$)
 3. Are feature weights significantly unequal to 0? ($\tau_3$)
 
-#### Weakness
+##### RENT workflow 
 
-The selection power of this method wasn't enough, after the initial filtering, the features left all have strong t-test performance between the two class.  The three selection criteria wasn't enough as the coefficients of the remaining features all showed high $\tau_1$ and $\tau_3$. Although $\tau_2$ can be used to filter away around 60% of features, different features were kept each time RENT is performed on the dataset. 
+```mermaid
+flowchart LR
+  A[(Training<br>data)] 
+  subgraph RENT["Repeated Elastic Net Technique for Feature Selection (RENT)"]
+  	BS[Bootstrap<br>sampling<br>K-times]
+  	T1[(Subset 1)]
+  	T2[(Subset 2)]
+  	Tdot((...))
+	T3[(Subset K)]
+
+  	EN1(Model 1)
+  	EN2(Model 2)
+  	EN3(Model N)
+  	BS --> T1 & T2 & T3
+    BS --- Tdot
+  	T1 --> EN1
+  	T2 --> EN2
+  	T3 --> EN3  
+
+    Criteria[Evaluate<br>selection<br>Criteria]
+    EN1 & EN2 & EN3 --> Criteria
+	style Tdot fill:none,stroke:none
+  	linkStyle 3 stroke:none  
+  end
+  A ---> BS
+  Criteria --> S[Selected features<br>subset]
+```
+
+##### Weakness
+
+The selection power of this method wasn't enough, after the initial filtering, the features left all have strong t-test performance between the two class.  The three selection criteria wasn't enough as the coefficients of the remaining features all showed high $\tau_1$ and $\tau_3$. Although $\tau_2$ can be used to filter away around 60% of features, different features were kept each time RENT is performed on the dataset.
 
 Therefore, for selection of features among t-test significant features, RENT isn't producing repeatable enough features.
 
-Also, it is not rare that the some of the K models trained couldn't converge, it is unsure if this is accounted for.
+Also, it is not rare that the some of the K models trained couldn't converge, it is unsure if this is accounted for or not. While this is related to the non-optimal alpha and L1-ratio, this is still problematic.
 
-#### Usage
+> **Notes:** Later it is found that while `RENT_Classification` showed unstableness, `RENT_Regression` seems to show better selection stability. However, when the outer K-fold is repeated again, the selected features were not always the same. Furthermore, after the features were recalculated from the original data together with some added features, the selected features changes, so it is still sensitive to the data some how but more stable than doing nothing.
+
+##### Usage
 
 ```python
 from RENT import RENT
@@ -365,8 +397,6 @@ model = RENT.RENT_Classification(data=train_data,
 model.train()
 selected_features = model.select_features(tau_1_cutoff=0.9, tau_2_cutoff=0.9, tau_3_cutoff=0.975)
 ```
-
-
 
 # Visualization
 
@@ -416,8 +446,6 @@ From these graph, seems like using Elastic Net with $\alpha = 0.02$ and $\text{L
 
 ![](./img/ElasticNet_L1Ratio.png)
 
-
-
 ### Support Vector Regression
 
 * Degree of polynomial (when kernel "Poly" is used)
@@ -431,6 +459,7 @@ From these graph, seems like using Elastic Net with $\alpha = 0.02$ and $\text{L
 # Footnotes
 
 [^1]: [MIT OpenCourse Artificial Intelligence, Fall2010](https://www.youtube.com/watch?v=UHBmv7qCey4#t=48m38s)
-[^2]: [The Boosting Margin, or Why Boosting Doesn’t Overfit](https://jeremykun.com/2015/09/21/the-boosting-margin-or-why-boosting-doesnt-overfit/) (To be more accurate, it does overfit but is less likely to overfit.)
-[^3]: Jenul, Anna, et al. "[RENT--Repeated Elastic Net Technique for Feature Selection.](https://arxiv.org/abs/2009.12780)" *arXiv preprint arXiv:2009.12780* (2020).
 
+[^2]: [The Boosting Margin, or Why Boosting Doesn’t Overfit](https://jeremykun.com/2015/09/21/the-boosting-margin-or-why-boosting-doesnt-overfit/) (To be more accurate, it does overfit but is less likely to overfit.)
+
+[^3]: Jenul, Anna, et al. "[RENT--Repeated Elastic Net Technique for Feature Selection.](https://arxiv.org/abs/2009.12780)" *arXiv preprint arXiv:2009.12780* (2020).

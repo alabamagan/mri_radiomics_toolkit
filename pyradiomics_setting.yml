@@ -3,21 +3,22 @@ imageType:
   LBP2D:
     lbp2DRadius: 0.4492
     lbp2DMethod: 'default'
+    force2D: True
   LBP3D:
     lbp3DIcosphereRadius : 0.4492
   LoG:
     sigma: [0.4492, 0.4492, 0.4492]
+  Gradient: {}
+  Exponential: {}
 
 featureClass:
   firstorder:
     - Energy
     - Entropy
-    - InterquartileRange
     - Kurtosis
     - Maximum
     - MeanAbsoluteDeviation
     - Mean
-    - Median
     - RobustMeanAbsoluteDeviation
     - RootMeanSquared
     - Skewness
