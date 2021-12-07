@@ -383,7 +383,8 @@ def features_selection(features_a: pd.DataFrame,
                        features_b: pd.DataFrame,
                        targets: pd.DataFrame,
                        n_trials = 500,
-                       criteria_threshold = (0.9, 0.5, 0.99)):
+                       criteria_threshold = (0.9, 0.5, 0.99),
+                       boosting: bool = True):
     r"""
     Features selection wrapper function, execute:
     1. initial feature filtring `initial_feature_filtering`
@@ -419,7 +420,7 @@ def features_selection(features_a: pd.DataFrame,
                                                 criteria_threshold=criteria_threshold,
                                                 n_trials=n_trials,
                                                 n_features=25,
-                                                boosting=True)
+                                                boosting=boosting)
     logger.info(f"in features: \n{feats_a.sort_index(level=0)}")
     logger.info(f"The selected features: \n{feats_a_out}")
     # classification models
@@ -433,7 +434,8 @@ def bootstrapped_features_selection(features_a: pd.DataFrame,
                                     boot_runs: int = 250,
                                     boot_ratio: Iterable[float] = (0.8, 1.0),
                                     thres_percentage: float = 0.4,
-                                    return_freq: bool = False) -> List[pd.DataFrame]:
+                                    return_freq: bool = False,
+                                    boosting:bool = True) -> List[pd.DataFrame]:
     r"""
     Use either bootstrapping to further improve selection stability
 
@@ -457,7 +459,12 @@ def bootstrapped_features_selection(features_a: pd.DataFrame,
         train_xa = features_a.T.loc[train_y.index].T
         train_xb = features_b.T.loc[train_y.index].T
 
-        features = features_selection(train_xa, train_xb, train_y, n_trials=n_trials, criteria_threshold=criteria_threshold)
+        features = features_selection(train_xa,
+                                      train_xb,
+                                      train_y,
+                                      n_trials=n_trials,
+                                      criteria_threshold=criteria_threshold,
+                                      boosting=boosting)
         features_names = ['__'.join(i) for i in features.index]
         features_list.append(features_names)
         features_dict[i] = features_names
