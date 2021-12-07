@@ -1,7 +1,9 @@
-import re, os
+import re, os, sys
 import radiomics
 import SimpleITK as sitk
 import pandas as pd
+import logging
+import numpy as np
 from radiomics import featureextractor
 from pathlib import Path
 from mnts.mnts_logger import MNTSLogger
@@ -33,17 +35,31 @@ def get_radiomics_features(fn: Path,
     """
     assert fn.is_file() and mn.is_file(), f"Cannot open images or mask at: {fn} and {mn}"
 
+    try:
+        im = sitk.ReadImage(str(fn))
+        msk = sitk.ReadImage(str(mn))
+        # check if they have same spacing
+        if not im.GetSpacing() == msk.GetSpacing():
+            MNTSLogger['radiomics_features'].warning("Detected differences in spacing! Resampling...")
+            filt = sitk.ResampleImageFilter()
+            filt.SetReferenceImage(im)
+            msk = filt.Execute(msk)
+        # Check if image has nan
+        if not (np.isfinite(sitk.GetArrayFromImage(im)).all() and np.isfinite(sitk.GetArrayFromImage(msk)).all()):
+            MNTSLogger['radiomics_features'].warning(f"Detected NAN in image {str(fn    )}")
 
-    im = sitk.ReadImage(str(fn))
-    msk = sitk.ReadImage(str(mn))
-    feature_extractor = featureextractor.RadiomicsFeatureExtractor(str(param_file.resolve()))
 
-    features = featureextractor.RadiomicsFeatureExtractor(str(param_file.resolve()))
-    X = feature_extractor.execute(im, sitk.Cast(msk, sitk.sitkUInt8))
-    df = pd.DataFrame.from_dict({k: (v.tolist() if hasattr(v, 'tolist') else str(v))
-                                 for k, v in X.items()}, orient='index')
-    df.columns = [f'{re.search(globber, fn.name).group()}']
-    return df
+        feature_extractor = featureextractor.RadiomicsFeatureExtractor(str(param_file.resolve()))
+
+        features = featureextractor.RadiomicsFeatureExtractor(str(param_file.resolve()))
+        X = feature_extractor.execute(im, sitk.Cast(msk, sitk.sitkUInt8))
+        df = pd.DataFrame.from_dict({k: (v.tolist() if hasattr(v, 'tolist') else str(v))
+                                     for k, v in X.items()}, orient='index')
+        df.columns = [f'{re.search(globber, fn.name).group()}']
+        return df
+    except Exception as e:
+        MNTSLogger['radiomics_features'].error("Error during get_radiomics_features!")
+        MNTSLogger['radiomics_features'].exception(e)
 
 def get_radiomics_features_from_folder(im_dir: Path,
                                        seg_dir: Path,
@@ -89,7 +105,7 @@ def main():
                         help="Directory to image files.")
     parser.add_argument('-s', '--seg-dir', action='store', type=Path,
                         help='Directory to segmentation files.')
-    parser.add_argument('-p', '--param-file', action='store', type=Path, default=Path('./pyradiomics_setting.yml'),
+    parser.add_argument('-p', '--param-file', action='store', type=Path, default=Path('pyradiomics_setting-v2.yml'),
                         help='Path to the pyradiomics settings.')
     parser.add_argument('-g', '--id-globber', action='store', type=str, default=r"^(NPC|T1rhoNPC|K|P|RHO)?[0-9]{2,4}",
                         help='Regex ID globber for pairing images and segmentation.')
@@ -114,12 +130,18 @@ def main():
     # Prepare logger config
     i = 0
     basename = 'pyradiomics'
-    log_file = Path('Log')
+    log_file_base = Path('Log')
+    log_file = log_file_base.joinpath(basename)
     while log_file.with_suffix('.log').exists():
         i += 1
-        log_file = log_file.joinpath(f'{basename}-{i}')
+        log_file = log_file_base.joinpath(f'{basename}-{i}')
     logger = MNTSLogger(log_dir=str(log_file.with_suffix('.log')), logger_name='pyradiomics', verbose=True)
     radiomics.logger = logger
+
+    # Grap stream
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logger._logger.level)
+    logger._logger.addHandler(handler)
 
 
     globber = args.id_globber
