@@ -1,11 +1,11 @@
 imageType:
   Original: {}
   LBP2D:
-    lbp2DRadius: 0.4492
+    lbp2DRadius: 0.9
     lbp2DMethod: 'default'
     force2D: True
   LBP3D:
-    lbp3DIcosphereRadius : 0.4492
+    lbp3DIcosphereRadius : 0.9
   LoG:
     sigma: [0.4492, 0.4492, 0.4492]
   Gradient: {}
@@ -30,4 +30,5 @@ featureClass:
 
 setting:
   resampledPixelSpacing: [0.4492, 0.4492, 0.4492]
+  binWidth: 1
   preCrop: True

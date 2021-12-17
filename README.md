@@ -1,23 +1,64 @@
-# Introduction
-
-This folder contains some scripts for a radiomics pipeline. This radiomics pipeline was designed with the aim of differentiating early stage T1 nasopharyngeal carcinoma (NPC) with benign hyperplasia (BH) using Axial MRI images.
-
-As for NPC, the Axial MRIs are commonly scanned using a thick slice configuration, some 3D features might suffer from the lack of repeatability if the slice thickness varies too much. Regardless, the backbone of this set of scripts tries to customize the radiomics pipeline to ensure maximum repeatability, even when that means sacrificing performance.
-
-# Requirements
-
-* scikit-learn >= 1.0
-* pyradiomics >= 3.0.1
-* simpleitk >= 2.1.1
-* scipy >= 1.7.1
-* pandas >= 1.1.4
-* pingouin >= 0.4.0
-* tqdm >= 4.48.2
-* mri-normalization-toolkit >= 0.1
-
 # Index
 
 [TOC]
+
+# Code Structure
+
+## Functionalities Specifications
+
+### A. Feature Extractor
+
+| Item | Specification                                                |
+| :--: | ------------------------------------------------------------ |
+|  A1  | Input: (1) Image, (2) Segementation                          |
+|  A2  | Output is an Excel file: 1st column is filter name, 2nd column is feature group name, 3rd column is feature name; rows are patient IDs |
+|  A3  | Can be run with in-line command                              |
+|  A4  | Interface to use PyRadiomics, config specified in a yaml file as described by PyRadiomics documentations |
+|  A5  | Allow room for in-house feature computation                  |
+|  A6  | Should have image normalization embedded                     |
+
+#### In-house feature computation computation
+
+* [ ] Algorithm to find mid-sagittal line (MSL), MSL should pass through centroid of tumor
+* [ ] Based on the MSL, compute the volume ratio on the two side of the head, use this as one of the features
+
+### B. Feature Selector
+
+| Item | Specification                                                |
+| :--: | ------------------------------------------------------------ |
+|  B1  | Input: (1) all features, (2) class of each data point✔️       |
+|  B2  | Output: (1) a set of selected features✔️                      |
+|  B3  | The selector should follow the backbone set out by RENT. A summary of features RENT criteria scores should be recorded and reported.✔️ |
+|  B4  | A `fit()` function, with 2 compulsory arguments, (1) the features and (2) the class of each data point✔️ |
+|  B5  | `fit()` should receive an optional argument, that is the second set of the same features. If it is supplied the function will also run the feature filtration based on the ICC and t-test of between the values of the first and second set of features. |
+|  B6  | Tunable hyper-parameters are $\tau_{1,2,3}$, `n_trial` ✔️     |
+
+### C. Model building
+
+| Item | Specification                                                |
+| :--: | ------------------------------------------------------------ |
+|  C1  | Input: (1) selected feature of each case, (2) class of each data point |
+|  C2  | Output: (1) set of model states, (2) prediction results of each model |
+|  C3  | Should included the following models: (1) support vector machine (SVM), b) elastic net, c) logistic regression, d) random forest, e) perceptron and f) k-nearest neighbors (KNN). |
+|  C4  | Should include a step where a grid search of the best hyper-parameters of each of the upper methods is to be performed |
+|  C5  | A method to save the states trained by best hyper-parameters. File save as `.pkl` format |
+|  C6  | A method to load the trained state                           |
+|  C7  | Model trained in a cross-validation fashion                  |
+|  C8  | A method to inference the incoming feature                   |
+
+### D. Controller
+
+| Item | Specification                                                |
+| ---- | ------------------------------------------------------------ |
+| D1   | Input: same as features extractor A1                         |
+| D2   | Provide two key functions: (1) `fit()` and (2) `predict()`   |
+| D2   | `fit()` should have two compulsory arguments: (1) list of nifti files, (2) the classification state of the nifti image (BH or NPC?) |
+| D4   | `fit()` should include `**kwargs` as argument                |
+| D5   | `fit()` should return 1 for error and 0 for sucess           |
+| D6   | `predict()` should have one compulsory argument: (1) list of nifti files or path to one nifti file |
+| D7   | `predict()` should return 1 for error and 0 for sucess       |
+
+
 
 # Feature Extraction
 
@@ -98,7 +139,7 @@ The radiomics were done over the images output to `04.NyulNormBinned`. Note that
 
 ## Pyradiomics setting
 
-The extraction setting can be done using yaml files. There is a default setting located in this [file](./pyradiomics_setting.yml). The default setting was customized for NPC Axial MRI and is briefly introduced:
+The extraction setting can be done using yaml files. There is a default setting located in this [file](./pyradiomics_setting-v2.yml). The default setting was customized for NPC Axial MRI and is briefly introduced:
 
 ### v1
 
@@ -159,12 +200,55 @@ flowchart LR
   A --> Preprocessing --> ImageType
 ```
 
+### v2
+
+Update because it is found that default intensity binning of pyradiomics is not making sense in our application.
+
+```yaml
+imageType:
+  Original: {}
+  LBP2D:
+    lbp2DRadius: 0.9
+    lbp2DMethod: 'default'
+    force2D: True
+  LBP3D:
+    lbp3DIcosphereRadius : 0.9
+  LoG:
+    sigma: [0.4492, 0.4492, 0.4492]
+  Gradient: {}
+  Exponential: {}
+
+featureClass:
+  firstorder:
+    - Energy
+    - Entropy
+    - Kurtosis
+    - Maximum
+    - MeanAbsoluteDeviation
+    - Mean
+    - RobustMeanAbsoluteDeviation
+    - RootMeanSquared
+    - Skewness
+    - Uniformity
+    - Variance
+  shape:
+  glcm:
+  glrlm:
+
+setting:
+  resampledPixelSpacing: [0.4492, 0.4492, 0.4492]
+  binWidth: 1 # <-- this is the only difference.
+  preCrop: True
+```
+
+
+
 # Model Building
 
 ## Usage
 
 ```bash
-python run_model_building.py
+python model_building.py
 ```
 
 ## Features Filtration
@@ -318,11 +402,11 @@ flowchart LR
 
 #### TODO
 
-* [ ] Build a bunch bunch of pipelines and get a list of best hyper-parameters
-  * [ ] SVM
-  * [ ] Logistic regression
-  * [ ] Random forest
-  * [ ] K nearest neighbour
+* [x] Build a bunch bunch of pipelines and get a list of best hyper-parameters
+  * [x] SVM
+  * [x] Logistic regression
+  * [x] Random forest
+  * [x] K nearest neighbour
   * [X] Elastic Net
     * For each run, record the rank of coefficients magnitude, average the ranks across several trials and us only 10 features
 
@@ -374,7 +458,7 @@ Therefore, for selection of features among t-test significant features, RENT isn
 
 Also, it is not rare that the some of the K models trained couldn't converge, it is unsure if this is accounted for or not. While this is related to the non-optimal alpha and L1-ratio, this is still problematic.
 
-> **Notes:** Later it is found that while `RENT_Classification` showed unstableness, `RENT_Regression` seems to show better selection stability. However, when the outer K-fold is repeated again, the selected features were not always the same. Furthermore, after the features were recalculated from the original data together with some added features, the selected features changes, so it is still sensitive to the data some how but more stable than doing nothing.
+> **Notes:** Later it is found that while `RENT_Classification` showed unstableness, `RENT_Regression` seems to show better selection stability. However, when the outer K-fold is repeated again, the selected features were not always the same. Furthermore, after the features were recalculated from the original data together with some added features, the selected features changes, so it is still sensitive to the data some how but more stable than doing nothing. Therefore, we proposed to boost the elastic net prior to evaluating the three selection criteria.
 
 ##### Usage
 
@@ -397,6 +481,12 @@ model = RENT.RENT_Classification(data=train_data,
 model.train()
 selected_features = model.select_features(tau_1_cutoff=0.9, tau_2_cutoff=0.9, tau_3_cutoff=0.975)
 ```
+
+##### Mathematical base of boosting RENT
+
+We use AdaBoost to boost the elastic net
+
+
 
 # Visualization
 

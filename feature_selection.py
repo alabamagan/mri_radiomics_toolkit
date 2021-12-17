@@ -3,11 +3,9 @@ import pandas as pd
 import pingouin as pg
 
 from pathlib import Path
-
 from mnts.mnts_logger import MNTSLogger
 from tqdm.auto import *
-from typing import Union, Optional, Iterable, List, Callable
-
+from typing import Union, Optional, Iterable, List, Callable, Sequence
 
 import sklearn
 from sklearn.model_selection import *
@@ -19,6 +17,8 @@ import multiprocessing as mpi
 from tqdm.auto import *
 from functools import partial
 from RENT import RENT, stability
+
+import joblib
 
 global logger
 
@@ -380,10 +380,10 @@ def features_normalization(features):
     return normed
 
 def features_selection(features_a: pd.DataFrame,
-                       features_b: pd.DataFrame,
                        targets: pd.DataFrame,
-                       n_trials = 500,
-                       criteria_threshold = (0.9, 0.5, 0.99),
+                       features_b: pd.DataFrame = None,
+                       n_trials=500,
+                       criteria_threshold=(0.9, 0.5, 0.99),
                        boosting: bool = True):
     r"""
     Features selection wrapper function, execute:
@@ -404,12 +404,17 @@ def features_selection(features_a: pd.DataFrame,
     logger = MNTSLogger['model_building']
 
     # Initial feature filtering using quantitative methods
-    feats_a, feats_b = initial_feature_filtering(features_a, features_b, targets)
+    if features_b is not None:
+        feats_a, feats_b = initial_feature_filtering(features_a, features_b, targets)
+    else:
+        feats_a = features_a
     # Note: Because initial feature filtering relies on variance and ICC, it is not proper to normalize the data prior
     #       to this because it alters the mean and variance of the features.
 
     # Normalize remaining features for data-driven feature selection
-    feats_a, feats_b = features_normalization(feats_a), features_normalization(feats_b)
+    feats_a = features_normalization(feats_a)
+    if features_b is not None:
+        feats_b = features_normalization(feats_b)
 
     # Supervised feature selection using RENT
     alpha = 0.02
@@ -427,15 +432,15 @@ def features_selection(features_a: pd.DataFrame,
     return feats_a_out
 
 def bootstrapped_features_selection(features_a: pd.DataFrame,
-                                    features_b: pd.DataFrame,
                                     targets: pd.DataFrame,
-                                    criteria_threshold = (0.9, 0.5, 0.99),
+                                    features_b: pd.DataFrame = None,
+                                    criteria_threshold=(0.9, 0.5, 0.99),
                                     n_trials: int = 500,
                                     boot_runs: int = 250,
                                     boot_ratio: Iterable[float] = (0.8, 1.0),
                                     thres_percentage: float = 0.4,
                                     return_freq: bool = False,
-                                    boosting:bool = True) -> List[pd.DataFrame]:
+                                    boosting: bool = True) -> List[pd.DataFrame]:
     r"""
     Use either bootstrapping to further improve selection stability
 
@@ -459,12 +464,8 @@ def bootstrapped_features_selection(features_a: pd.DataFrame,
         train_xa = features_a.T.loc[train_y.index].T
         train_xb = features_b.T.loc[train_y.index].T
 
-        features = features_selection(train_xa,
-                                      train_xb,
-                                      train_y,
-                                      n_trials=n_trials,
-                                      criteria_threshold=criteria_threshold,
-                                      boosting=boosting)
+        features = features_selection(train_xa, train_y, train_xb, n_trials=n_trials,
+                                      criteria_threshold=criteria_threshold, boosting=boosting)
         features_names = ['__'.join(i) for i in features.index]
         features_list.append(features_names)
         features_dict[i] = features_names
@@ -486,102 +487,68 @@ def bootstrapped_features_selection(features_a: pd.DataFrame,
     else:
         return features_a.loc[selected_features], features_b.loc[selected_features]
 
-def main():
-    global logger
-    logger = MNTSLogger('Log/run_model_building.log', verbose=True)
+class FeatureSelector(object):
+    def __init__(self,
+                 criteria_threshold: Optional[Sequence[int]] = (0.9, 0.5, 0.99),
+                 n_trials:           Optional[int] = 500,
+                 boot_runs:          Optional[int] = 250,
+                 boot_ratio:         Optional[Iterable[float]] = (0.8, 1.0),
+                 thres_percentage:   Optional[float] = 0.4,
+                 return_freq:        Optional[bool] = False,
+                 boosting:           Optional[bool] = True):
+        super(FeatureSelector, self).__init__()
 
-    # |=========================================|
-    # | 1. Feature extraction (done externally) |
-    # |=========================================|
-    # Load features
-    #--------------
-    # Features should have their col indices as patient identifier and row as features
-    # features_a = Path('./extracted_features_1st.xlsx')
-    # features_b = Path('./extracted_features_2nd.xlsx')
-    features_a = Path('./pyrad_features_1st_nyul.xlsx')
-    features_b = Path('./pyrad_features_2nd_nyul.xlsx')
-    features_a = pd.read_excel(str(features_a), index_col=(0, 1, 2))
-    features_a.index.rename(['Pre-processing', 'Feature_Group', 'Feature_Name'], inplace=True)
-    features_b = pd.read_excel(str(features_b), index_col=(0, 1, 2))
-    features_b.index.rename(['Pre-processing', 'Feature_Group', 'Feature_Name'], inplace=True)
+        self.criteria_threshold = criteria_threshold
+        self.n_trials = n_trials
+        self.boot_runs = boot_runs
+        self.boot_ratio = boot_ratio
+        self.thres_percentage = thres_percentage
+        self.return_freq = return_freq
+        self.boosting = boosting
 
-    # Target status should have patients identifier as row index and status as the only column
-    status = Path('./data/v2-datasheet.csv')
-    status = pd.read_csv(str(status), index_col=0)
-    status.columns = ['Status']
+        self.saved_state = {
+            'selected_features': None,
+            'feat_freq': None,
+        }
 
-    # Split the features into 5-folds with stratification to the status of malignancy
-    splitter = StratifiedKFold(n_splits=5, shuffle=True)
-    outer_dict = {}
-    outer_list = []
-    for k in range(50):
-        logger.info(f"=== Running {k} ===")
-        selected_features_list = []
-        splits = splitter.split(status.index, status[status.columns[0]])
-        fold_configs = {}
-        for fold, (train_index, test_index) in enumerate(splits):
-            train_ids, test_ids = [str(status.index[i]) for i in train_index], \
-                                  [str(status.index[i]) for i in test_index]
-            train_ids.sort()
-            test_ids.sort()
-            fold_configs[fold] = (train_ids, test_ids)
+    def load(self, f: Path):
+        r"""
+        Load att `self.save_state`. The file saved should be a dictionary containing key 'selected_features', which
+        points to a list of features in the format of pd.MultiIndex or tuple
+        """
+        assert Path(f).is_file(), f"Cannot open file {f}"
+        d = joblib.load(f)
+        if not isinstance(d, dict):
+            raise TypeError("State loaded is incorrect!")
+        self.saved_state.update(d)
 
-        #!! Loop each fold
-        for fold, (train_ids, test_ids) in fold_configs.items():
-            # Seperate traing and test features
-            train_feat_a = features_a.T.loc[train_ids].T
-            train_feat_b = features_b.T.loc[train_ids].T
-            test_feat_a = features_a.T.loc[test_ids].T
-            test_feat_b = features_b.T.loc[test_ids].T
+    def save(self, f: Path):
+        if any([v is None for v in self.saved_state.values()]):
+            raise ArithmeticError("There are nothing to save.")
+        joblib.dump(self.saved_state, filename=f.with_suffix('.fss'))
 
-            # |======================|
-            # | 2. Feature selection |
-            # |======================|
+    def fit(self,
+            X_a: pd.DataFrame,
+            y:   Union[pd.DataFrame, pd.Series],
+            X_b: Optional[pd.DataFrame]=None):
+        r"""
+        Args:
+            X_a (pd.DataFrame):
+                Radiomics features. Each row should be a feature, each column should be a data point.
+            y (pd.DataFrame or pd.Series):
+                Class of the data.
+            X_b (pd.DataFrame, Optional):
+                Radiomics features from another segmentation. Aims to filter away features that are susceptable to
+                to inter-observer changes in the segmentation. Default to None.
+        """
 
-            selected_features = features_selection(train_feat_a, train_feat_b, status, n_trials=500)
-            selected_features.to_excel(f'./output/selected_features_{fold}.xlsx')
-            #save the features
-            selected_features_list.append(['__'.join(i) for i in selected_features.index])
-
-        outer_list.extend(selected_features_list)
-        union_features = set.union(*[set(i) for i in selected_features_list])
-        features_frequencies = {i: 0 for i in union_features}
-        for i in union_features:
-            for j in selected_features_list:
-                if i in j:
-                    features_frequencies[i] += 1
-        features_frequencies = pd.Series(features_frequencies, name=f'frequencies_{k}')
-        outer_dict[k] = features_frequencies
-        logger.info(f"Feature_Summary: {features_frequencies.to_string()}")
-        logger.info(f"=== Done {k} === ")
-
-    # For outer loop
-    union_features = set.union(*[set(i) for i in outer_list])
-    features_frequencies = {i: 0 for i in union_features}
-    for i in union_features:
-        for j in outer_list:
-            if i in j:
-                features_frequencies[i] += 1
-    features_frequencies = pd.Series(features_frequencies, name='frequencies_all')
-    logger.info(f"Feature_Summary: {features_frequencies.to_string()}")
-
-    features_frequencies = features_frequencies.to_frame()
-    for k in outer_dict:
-        _right = outer_dict[k].to_frame()
-        features_frequencies = features_frequencies.join(_right, how='outer')
-    features_frequencies.fillna(0, inplace=True)
-    features_frequencies.to_excel(f"./output/selected_feat_freq.xlsx")
-
-
-        # |===================|
-        # | 3. Model building |
-        # |===================|
-
-        # Build models out of the training group
-
-        # Test model using the testing group
-
-        # Compute fold-wise results
-
-if __name__ == '__main__':
-    main()
+        feats = bootstrapped_features_selection(X_a, y, X_b, criteria_threshold=self.criteria_threshold,
+                                                n_trials=self.n_trials, boot_runs=self.boot_runs,
+                                                boot_ratio=self.boot_ratio, thres_percentage=self.thres_percentage,
+                                                return_freq=True, boosting=self.boosting)
+        self.saved_state['selected_features'] = feats[0]
+        self.saved_state['feat_freq'] = feats[1]
+        if self.return_freq:
+            return feats
+        else:
+            return X_a.loc[feats[0]], X_b.loc[feats[0]]

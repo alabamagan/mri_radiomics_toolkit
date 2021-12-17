@@ -12,6 +12,7 @@ from sklearn.model_selection import *
 from sklearn import *
 from scipy.stats import *
 
+import joblib
 import numpy as np
 import multiprocessing as mpi
 from tqdm.auto import *
@@ -128,40 +129,7 @@ def cv_grid_search(train_features: pd.DataFrame,
 
     # Collect the predictions of the testing sets
     predict_table = pd.concat(predict_table, axis=1)
-
     return best_params, results, predict_table, best_estimators
-
-
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-
-    df_cvres = []
-    for i in range(15):
-        grid = GridSearchCV(clf, n_jobs=5, param_grid=param_grid,
-                            scoring='roc_auc', cv=split)
-        X = grid.fit(feats_a.T.values, train_targets.loc[feats_a.columns].to_numpy().ravel())
-        logger.info(f"Best_score: {grid.best_score_}")
-        logger.info(f"Best_params: {grid.best_params_}")
-        logger.info(f"Best_estimator coef: {grid.best_estimator_}")
-        cvres = pd.DataFrame(grid.cv_results_)
-        df_cvres.append(cvres)
-
-
-    df_cvres = pd.concat(df_cvres)
-    df_cvres = df_cvres.reset_index()
-    fig, ax = plt.subplots(1, 2, figsize=(10, 5), sharey=True)
-    sns.lineplot(data=df_cvres,
-                 x='param_classification__alpha',
-                 y='mean_test_score',
-                 hue='param_classification__l1_ratio',
-                 ax=ax[0])
-    sns.lineplot(data=df_cvres,
-                 x='param_classification__l1_ratio',
-                 y='mean_test_score',
-                 hue='param_classification__alpha',
-                 ax=ax[1])
-    plt.show()
-    return grid
 
 
 def model_building(train_features: pd.DataFrame,
@@ -223,102 +191,54 @@ def model_building(train_features: pd.DataFrame,
 
     return models, results
 
-def main():
-    global logger
-    logger = MNTSLogger('Log/run_model_building.log', verbose=True)
+class ModelBuilder(object):
+    def __init__(self):
+        super(ModelBuilder, self).__init__()
 
-    # |=========================================|
-    # | 1. Feature extraction (done externally) |
-    # |=========================================|
-    # Load features
-    #--------------
-    # Features should have their col indices as patient identifier and row as features
-    # features_a = Path('./extracted_features_1st.xlsx')
-    # features_b = Path('./extracted_features_2nd.xlsx')
-    features_a = Path('./pyrad_features_1st_nyul.xlsx')
-    features_b = Path('./pyrad_features_2nd_nyul.xlsx')
-    features_a = pd.read_excel(str(features_a), index_col=(0, 1, 2))
-    features_a.index.rename(['Pre-processing', 'Feature_Group', 'Feature_Name'], inplace=True)
-    features_b = pd.read_excel(str(features_b), index_col=(0, 1, 2))
-    features_b.index.rename(['Pre-processing', 'Feature_Group', 'Feature_Name'], inplace=True)
+        self.saved_state = {
+            'estimators': None,
+            'best_params': None
+        }
 
-    # Target status should have patients identifier as row index and status as the only column
-    status = Path('./data/v2-datasheet.csv')
-    status = pd.read_csv(str(status), index_col=0)
-    status.columns = ['Status']
+    def load(self, f: Path):
+        r"""
+        Load att `self.save_state`. The file saved should be a dictionary containing key 'selected_features', which
+        points to a list of features in the format of pd.MultiIndex or tuple
+        """
+        assert Path(f).is_file(), f"Cannot open file {f}"
+        d = joblib.load(f)
+        if not isinstance(d, dict):
+            raise TypeError("State loaded is incorrect!")
+        self.saved_state.update(d)
 
-    # Split the features into 5-folds with stratification to the status of malignancy
-    splitter = StratifiedKFold(n_splits=5, shuffle=True)
-    outer_dict = {}
-    outer_list = []
-    for k in range(50):
-        logger.info(f"=== Running {k} ===")
-        selected_features_list = []
-        splits = splitter.split(status.index, status[status.columns[0]])
-        fold_configs = {}
-        for fold, (train_index, test_index) in enumerate(splits):
-            train_ids, test_ids = [str(status.index[i]) for i in train_index], \
-                                  [str(status.index[i]) for i in test_index]
-            train_ids.sort()
-            test_ids.sort()
-            fold_configs[fold] = (train_ids, test_ids)
+    def save(self, f: Path):
+        if any([v is None for v in self.saved_state.values()]):
+            raise ArithmeticError("There are nothing to save.")
+        joblib.dump(self.saved_state, filename=f.with_suffix('.fss'))
 
-        #!! Loop each fold
-        for fold, (train_ids, test_ids) in fold_configs.items():
-            # Seperate traing and test features
-            train_feat_a = features_a.T.loc[train_ids].T
-            train_feat_b = features_b.T.loc[train_ids].T
-            test_feat_a = features_a.T.loc[test_ids].T
-            test_feat_b = features_b.T.loc[test_ids].T
+    def fit(self,
+            train_features: pd.DataFrame,
+            train_targets: pd.DataFrame,
+            test_features: pd.DataFrame,
+            test_targets: pd.DataFrame):
+        best_params, results, predict_table, best_estimators = cv_grid_search(train_features,
+                                                                              train_targets,
+                                                                              test_features,
+                                                                              test_targets)
+        self.saved_state['estimators'] = best_estimators
+        self.saved_state['best_params'] = best_params
 
-            # |======================|
-            # | 2. Feature selection |
-            # |======================|
+    def predict(self, features: pd.DataFrame):
+        r"""
+        Predict the class supplied features.
 
-            selected_features = run_features_selection(train_feat_a, train_feat_b, status, n_trials=500)
-            selected_features.to_excel(f'./output/selected_features_{fold}.xlsx')
-            #save the features
-            selected_features_list.append(['__'.join(i) for i in selected_features.index])
+        Args:
+            features (pd.DataFrame):
+                Selected features.
+        Returns:
+            (dict)
+        """
+        assert self.saved_state['estimators'] is not None, "Call fit() or load() first."
+        estimators = self.saved_state['estimator']
+        return {v: estimators[v].predict(features) for v in estimators}
 
-        outer_list.extend(selected_features_list)
-        union_features = set.union(*[set(i) for i in selected_features_list])
-        features_frequencies = {i: 0 for i in union_features}
-        for i in union_features:
-            for j in selected_features_list:
-                if i in j:
-                    features_frequencies[i] += 1
-        features_frequencies = pd.Series(features_frequencies, name=f'frequencies_{k}')
-        outer_dict[k] = features_frequencies
-        logger.info(f"Feature_Summary: {features_frequencies.to_string()}")
-        logger.info(f"=== Done {k} === ")
-
-    # For outer loop
-    union_features = set.union(*[set(i) for i in outer_list])
-    features_frequencies = {i: 0 for i in union_features}
-    for i in union_features:
-        for j in outer_list:
-            if i in j:
-                features_frequencies[i] += 1
-    features_frequencies = pd.Series(features_frequencies, name='frequencies_all')
-    logger.info(f"Feature_Summary: {features_frequencies.to_string()}")
-
-    features_frequencies = features_frequencies.to_frame()
-    for k in outer_dict:
-        _right = outer_dict[k].to_frame()
-        features_frequencies = features_frequencies.join(_right, how='outer')
-    features_frequencies.fillna(0, inplace=True)
-    features_frequencies.to_excel(f"./output/selected_feat_freq.xlsx")
-
-
-        # |===================|
-        # | 3. Model building |
-        # |===================|
-
-        # Build models out of the training group
-
-        # Test model using the testing group
-
-        # Compute fold-wise results
-
-if __name__ == '__main__':
-    main()
