@@ -21,6 +21,7 @@ from RENT import RENT, stability
 
 global logger
 
+__all__ = ['cv_grid_search', 'model_building', 'ModelBuilder']
 
 def cv_grid_search(train_features: pd.DataFrame,
                    train_targets: pd.DataFrame,
@@ -214,7 +215,7 @@ class ModelBuilder(object):
     def save(self, f: Path):
         if any([v is None for v in self.saved_state.values()]):
             raise ArithmeticError("There are nothing to save.")
-        joblib.dump(self.saved_state, filename=f.with_suffix('.fss'))
+        joblib.dump(self.saved_state, filename=f.with_suffix('.pkl'))
 
     def fit(self,
             train_features: pd.DataFrame,

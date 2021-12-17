@@ -25,3 +25,16 @@ def plot_performance_vs_hyperparams(clf,
         cvres = pd.DataFrame(grid.cv_results_)
         df_curves.append(cvres)
 
+    df_cvres = pd.concat(df_cvres)
+    df_cvres = df_cvres.reset_index()
+    fig, ax = plt.subplots(1, 2, figsize=(10, 5), sharey=True)
+    sns.lineplot(data=df_cvres,
+                 x='param_classification__alpha',
+                 y='mean_test_score',
+                 hue='param_classification__l1_ratio',
+                 ax=ax[0])
+    sns.lineplot(data=df_cvres,
+                 x='param_classification__l1_ratio',
+                 y='mean_test_score',
+                 hue='param_classification__alpha',
+                 ax=ax[1])

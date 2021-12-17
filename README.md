@@ -37,14 +37,14 @@
 
 | Item | Specification                                                |
 | :--: | ------------------------------------------------------------ |
-|  C1  | Input: (1) selected feature of each case, (2) class of each data point |
-|  C2  | Output: (1) set of model states, (2) prediction results of each model |
-|  C3  | Should included the following models: (1) support vector machine (SVM), b) elastic net, c) logistic regression, d) random forest, e) perceptron and f) k-nearest neighbors (KNN). |
-|  C4  | Should include a step where a grid search of the best hyper-parameters of each of the upper methods is to be performed |
-|  C5  | A method to save the states trained by best hyper-parameters. File save as `.pkl` format |
-|  C6  | A method to load the trained state                           |
-|  C7  | Model trained in a cross-validation fashion                  |
-|  C8  | A method to inference the incoming feature                   |
+|  C1  | Input: (1) selected feature of each case, (2) class of each data point✔️ |
+|  C2  | Output: (1) set of model states, (2) prediction results of each model✔️ |
+|  C3  | Should included the following models: (1) support vector machine (SVM), b) elastic net, c) logistic regression, d) random forest, e) perceptron and f) k-nearest neighbors (KNN).✔️ |
+|  C4  | Should include a step where a grid search of the best hyper-parameters of each of the upper methods is to be performed✔️ |
+|  C5  | A method to save the states trained by best hyper-parameters. File save as `.pkl` format✔️ |
+|  C6  | A method to load the trained state✔️                          |
+|  C7  | Model trained in a cross-validation fashion✔️                 |
+|  C8  | A method to inference the incoming feature✔️                  |
 
 ### D. Controller
 
@@ -139,7 +139,7 @@ The radiomics were done over the images output to `04.NyulNormBinned`. Note that
 
 ## Pyradiomics setting
 
-The extraction setting can be done using yaml files. There is a default setting located in this [file](./pyradiomics_setting-v2.yml). The default setting was customized for NPC Axial MRI and is briefly introduced:
+The extraction setting can be done using yaml files. There is a default setting located in this [file](pyradiomics_setting/pyradiomics_setting-v2.yml). The default setting was customized for NPC Axial MRI and is briefly introduced:
 
 ### v1
 

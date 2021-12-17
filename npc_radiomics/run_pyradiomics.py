@@ -105,7 +105,8 @@ def main():
                         help="Directory to image files.")
     parser.add_argument('-s', '--seg-dir', action='store', type=Path,
                         help='Directory to segmentation files.')
-    parser.add_argument('-p', '--param-file', action='store', type=Path, default=Path('pyradiomics_setting-v2.yml'),
+    parser.add_argument('-p', '--param-file', action='store', type=Path, default=Path(
+        '../pyradiomics_setting/pyradiomics_setting-v2.yml'),
                         help='Path to the pyradiomics settings.')
     parser.add_argument('-g', '--id-globber', action='store', type=str, default=r"^(NPC|T1rhoNPC|K|P|RHO)?[0-9]{2,4}",
                         help='Regex ID globber for pairing images and segmentation.')
@@ -130,7 +131,7 @@ def main():
     # Prepare logger config
     i = 0
     basename = 'pyradiomics'
-    log_file_base = Path('Log')
+    log_file_base = Path('../Log')
     log_file = log_file_base.joinpath(basename)
     while log_file.with_suffix('.log').exists():
         i += 1

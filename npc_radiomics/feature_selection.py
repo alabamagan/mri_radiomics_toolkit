@@ -19,8 +19,9 @@ from functools import partial
 from RENT import RENT, stability
 
 import joblib
-
 global logger
+
+__all__ = ['FeatureSelector', 'supervised_features_selection', 'initial_feature_filtering']
 
 def compute_ICC(featset_A: pd.DataFrame,
                 featset_B: pd.DataFrame) -> pd.DataFrame:
