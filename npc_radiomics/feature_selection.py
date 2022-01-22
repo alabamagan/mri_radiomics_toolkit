@@ -5,7 +5,7 @@ import pingouin as pg
 from pathlib import Path
 from mnts.mnts_logger import MNTSLogger
 from tqdm.auto import *
-from typing import Union, Optional, Iterable, List, Callable, Sequence
+from typing import Union, Optional, Iterable, List, Callable, Sequence, Tuple
 
 import sklearn
 from sklearn.model_selection import *
@@ -167,10 +167,16 @@ def T_test_filter(features: pd.DataFrame,
     Returns:
         pd.DataFrame
     """
-    classes = list(set(target['Status']))
+    try:
+        T = target['Status']
+    except KeyError:
+        # If key error use the first column
+        T = target[target.columns[0]]
+    classes = list(set(T))
+
 
     # Get a list of ids for patients with different classes
-    patients_lists = {c: target.loc[target['Status'] == c].index.tolist() for c in classes}
+    patients_lists = {c: target.loc[T == c].index.tolist() for c in classes}
 
     T_test_pvals = []
     for f in features.index:
@@ -408,7 +414,18 @@ def features_selection(features_a: pd.DataFrame,
     if features_b is not None:
         feats_a, feats_b = initial_feature_filtering(features_a, features_b, targets)
     else:
-        feats_a = features_a
+        # Just do variance filter and rop the useless columns
+        var_filter = feature_selection.VarianceThreshold(threshold=.95*(1-.95))
+        logger.info("Dropping 'Diganostics' column.")
+        feats_a = features_a.drop('diagnostics', inplace=False)
+
+        _ = var_filter.fit_transform(feats_a.T)
+        feats_index = feats_a.index[var_filter.get_support()]
+        logger.info(f"Features surviving var_filter: {feats_index}")
+        if not len(feats_index) == 0:
+            feats_a = feats_a.loc[feats_index]
+
+
     # Note: Because initial feature filtering relies on variance and ICC, it is not proper to normalize the data prior
     #       to this because it alters the mean and variance of the features.
 
@@ -451,6 +468,7 @@ def bootstrapped_features_selection(features_a: pd.DataFrame,
         See arguements detailed in `func:features_selection`
 
     """
+    logger = MNTSLogger[__name__]
     bootstrap_l, bootstrap_u = boot_ratio
     bootstrap_ratio = np.random.rand(boot_runs) * (bootstrap_u - bootstrap_l) + bootstrap_l
     features_list = []
@@ -459,18 +477,18 @@ def bootstrapped_features_selection(features_a: pd.DataFrame,
     features_name_map ={'__'.join(i): i for i in  features_a.index}
     # Bootstrapping loop
     for i in range(boot_runs):
-        print(f"=== Running {i} ===")
+        logger.info(f"=== Running {i} ===")
         train_y = sklearn.utils.resample(targets, n_samples = int(len(targets) * bootstrap_ratio[i]),
                                          stratify = targets.values.ravel())
         train_xa = features_a.T.loc[train_y.index].T
-        train_xb = features_b.T.loc[train_y.index].T
+        train_xb = features_b.T.loc[train_y.index].T if not features_b is None else None
 
         features = features_selection(train_xa, train_y, train_xb, n_trials=n_trials,
                                       criteria_threshold=criteria_threshold, boosting=boosting)
         features_names = ['__'.join(i) for i in features.index]
         features_list.append(features_names)
         features_dict[i] = features_names
-        print(f"=== Done {i} ===")
+        logger.info(f"=== Done {i} ===")
 
     # Return features with more than certain percentagle of appearance
     # Count features frequencies
@@ -489,6 +507,25 @@ def bootstrapped_features_selection(features_a: pd.DataFrame,
         return features_a.loc[selected_features], features_b.loc[selected_features]
 
 class FeatureSelector(object):
+    r"""
+    Args:
+        criteria_threshold ([int, int, int], Optional):
+            Corresponding to the three threshold described in Anna et al. [1], default to (0.9, 0.5, 0.99)
+        n_trials (int, Optional):
+            Specify the number times the elastic net is ran in RENT/BRENT.
+        boot_runs (int, Optional):
+            Number of bootstrapped runs. Each bootstrapped run execute RENT/BRENT once. Features that are nominated in
+            more than `thres_percentage` of the runs are included in the final feature subset. Default to 250.
+        boot_ratio ([float, float], Optional):
+            The lower and upper bound for the ratio of train-test sample size in each bootstrapped runs. Default to
+            (0.8, 1.0).
+        thres_percentage (float, Optional):
+            See `boot_runs`.
+        return_freq (bool, Optional):
+            If True, `fit` will return the frequency of selection of each feature across the bootsrapped runs.
+        boosting (bool, Optional):
+            If True, BRENT is used, otherwise RENT is used. Default to True.
+    """
     def __init__(self,
                  criteria_threshold: Optional[Sequence[int]] = (0.9, 0.5, 0.99),
                  n_trials:           Optional[int] = 500,
@@ -496,7 +533,8 @@ class FeatureSelector(object):
                  boot_ratio:         Optional[Iterable[float]] = (0.8, 1.0),
                  thres_percentage:   Optional[float] = 0.4,
                  return_freq:        Optional[bool] = False,
-                 boosting:           Optional[bool] = True):
+                 boosting:           Optional[bool] = True,
+                 ):
         super(FeatureSelector, self).__init__()
 
         self.criteria_threshold = criteria_threshold
@@ -506,10 +544,21 @@ class FeatureSelector(object):
         self.thres_percentage = thres_percentage
         self.return_freq = return_freq
         self.boosting = boosting
+        self.logger = MNTSLogger[__class__.__name__]
 
+        setting = {
+            'criteria_threshold': criteria_threshold,
+            'n_trials': n_trials,
+            'boot_runs': boot_runs,
+            'boot_ratio': boot_ratio,
+            'thres_percentage': thres_percentage,
+            'return_freq': return_freq,
+            'boosting': boosting
+        }
         self.saved_state = {
             'selected_features': None,
             'feat_freq': None,
+            'setting': setting
         }
 
     def load(self, f: Path):
@@ -531,25 +580,47 @@ class FeatureSelector(object):
     def fit(self,
             X_a: pd.DataFrame,
             y:   Union[pd.DataFrame, pd.Series],
-            X_b: Optional[pd.DataFrame]=None):
+            X_b: Optional[pd.DataFrame]=None) -> Union[Tuple, pd.DataFrame]:
         r"""
         Args:
             X_a (pd.DataFrame):
-                Radiomics features. Each row should be a feature, each column should be a data point.
+                Radiomics features. Each row should be a datapoint, each column should be a feature.
             y (pd.DataFrame or pd.Series):
                 Class of the data.
             X_b (pd.DataFrame, Optional):
                 Radiomics features from another segmentation. Aims to filter away features that are susceptable to
                 to inter-observer changes in the segmentation. Default to None.
         """
-
-        feats = bootstrapped_features_selection(X_a, y, X_b, criteria_threshold=self.criteria_threshold,
+        feats = bootstrapped_features_selection(X_a.T,
+                                                y,
+                                                X_b.T if X_b is not None else None,
+                                                criteria_threshold=self.criteria_threshold,
                                                 n_trials=self.n_trials, boot_runs=self.boot_runs,
                                                 boot_ratio=self.boot_ratio, thres_percentage=self.thres_percentage,
                                                 return_freq=True, boosting=self.boosting)
-        self.saved_state['selected_features'] = feats[0]
-        self.saved_state['feat_freq'] = feats[1]
+        self.logger.info(f"Selected {len(feats[1])} features: {feats[1]}")
+
+        self.saved_state['selected_features'] = feats[1]
+        self.saved_state['feat_freq'] = feats[0]
         if self.return_freq:
             return feats
         else:
-            return X_a.loc[feats[0]], X_b.loc[feats[0]]
+            if X_b is not None:
+                return X_a[feats[1]], X_b[feats[1]]
+            else:
+                return X_a[feats[1]], None
+
+    def predict(self, X_a: pd.DataFrame) -> pd.DataFrame:
+        r"""
+        Retrurn the feature columns that are selected
+
+        Args:
+            X_a:
+
+        Returns:
+
+        """
+        if self.saved_state['selected_features'] is None:
+            raise ArithmeticError("No information about selected features. Have you run fit()?")
+
+        return X_a[self.saved_state['selected_features']]

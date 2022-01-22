@@ -10,12 +10,12 @@
 
 | Item | Specification                                                |
 | :--: | ------------------------------------------------------------ |
-|  A1  | Input: (1) Image, (2) Segementation                          |
-|  A2  | Output is an Excel file: 1st column is filter name, 2nd column is feature group name, 3rd column is feature name; rows are patient IDs |
+|  A1  | Input: (1) Image, (2) Segementation ✔️                        |
+|  A2  | Output is an Excel file: Indexed with three columns, 1st column is filter name, 2nd column is feature group name, 3rd column is feature name; other columns are patient IDs |
 |  A3  | Can be run with in-line command                              |
 |  A4  | Interface to use PyRadiomics, config specified in a yaml file as described by PyRadiomics documentations |
 |  A5  | Allow room for in-house feature computation                  |
-|  A6  | Should have image normalization embedded                     |
+|  A6  | Should have image normalization embedded (embedded in feature extractor) |
 
 #### In-house feature computation computation
 
@@ -30,7 +30,7 @@
 |  B2  | Output: (1) a set of selected features✔️                      |
 |  B3  | The selector should follow the backbone set out by RENT. A summary of features RENT criteria scores should be recorded and reported.✔️ |
 |  B4  | A `fit()` function, with 2 compulsory arguments, (1) the features and (2) the class of each data point✔️ |
-|  B5  | `fit()` should receive an optional argument, that is the second set of the same features. If it is supplied the function will also run the feature filtration based on the ICC and t-test of between the values of the first and second set of features. |
+|  B5  | `fit()` should receive an optional argument, that is the second set of the same features. If it is supplied the function will also run the feature filtration based on the ICC and t-test of between the values of the first and second set of features. ✔️ |
 |  B6  | Tunable hyper-parameters are $\tau_{1,2,3}$, `n_trial` ✔️     |
 
 ### C. Model building
@@ -65,7 +65,7 @@
 ## Usage
 
 ```bash
-python run_pyradiomics.py -ios [-pgv] [--keep-log]
+python feature_extractor.py -ios [-pgv] [--keep-log]
 ```
 
 ### Parameters
@@ -485,6 +485,44 @@ selected_features = model.select_features(tau_1_cutoff=0.9, tau_2_cutoff=0.9, ta
 ##### Mathematical base of boosting RENT
 
 We use AdaBoost to boost the elastic net
+
+```mermaid
+flowchart LR
+  A[(Training<br>data)] 
+  subgraph RENT["Repeated Elastic Net Technique for Feature Selection (RENT)"]
+  	BS[Bootstrap<br>sampling<br>K-times]
+  	T1[(Subset 1)]
+  	T2[(Subset 2)]
+  	Tdot((...))
+	T3[(Subset K)]
+
+  	EN1(Weak 1.1)
+  	EN2(Weak 2.1)
+  	EN3(Weak N.1)
+
+  	EN12(Weak 1.2)
+  	EN22(Weak 2.2)
+  	EN32(Weak N.2)
+  	
+    EN1n(Weak 1.K)
+  	EN2n(Weak 2.K)
+  	ENn(Weak N.K)
+  	BS --> T1 & T2 & T3
+    BS --- Tdot
+  	T1 --> EN1 --> EN12 --> EN1n
+  	T2 --> EN2 --> EN22 --> EN2n
+  	T3 --> EN3 --> EN32 --> ENn
+
+    Criteria[Evaluate<br>selection<br>Criteria]
+    EN1n & EN2n & ENn --> Criteria
+	style Tdot fill:none,stroke:none
+  	linkStyle 3 stroke:none  
+  end
+  A --> BS
+  Criteria --> S[Selected features<br>subset]
+```
+
+
 
 
 

@@ -4,6 +4,7 @@ import pingouin as pg
 
 from pathlib import Path
 
+import sklearn.preprocessing
 from mnts.mnts_logger import MNTSLogger
 from tqdm.auto import *
 from typing import Union, Optional, Iterable, List, Callable, Tuple, Dict
@@ -26,7 +27,8 @@ __all__ = ['cv_grid_search', 'model_building', 'ModelBuilder']
 def cv_grid_search(train_features: pd.DataFrame,
                    train_targets: pd.DataFrame,
                    test_features: Optional[pd.DataFrame] = None,
-                   test_targets: Optional[pd.DataFrame] = None) -> List[Union[pd.DataFrame, Dict]]:
+                   test_targets: Optional[pd.DataFrame] = None,
+                   verbose=False) -> List[Union[pd.DataFrame, Dict]]:
     r"""
     Grid search for best hyper-parameters for the following linear models:
       * SVM
@@ -58,6 +60,7 @@ def cv_grid_search(train_features: pd.DataFrame,
 
     """
     clf = pipeline.Pipeline([
+        ('standardization', preprocessing.StandardScaler()),
         ('classification', 'passthrough')
     ])
 
@@ -66,7 +69,7 @@ def cv_grid_search(train_features: pd.DataFrame,
         'Support Vector Machine': {
             'classification': [svm.SVR(tol=1E-4, max_iter=3500)],
             'classification__kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
-            'classification__C': [0.1, 1, 10],
+            'classification__C': [1, 10, 100, 1000],
             'classification__degree': [3, 5, 7, 9],
             'classification__epsilon': [1, 0.1, 0.01]
         },
@@ -77,10 +80,10 @@ def cv_grid_search(train_features: pd.DataFrame,
         },
         'Logistic Regression': {
             'classification': [linear_model.LogisticRegression(penalty='elasticnet',
-                                                               solver='saga', tol=1E-4,
+                                                               solver='saga', tol=1E-5,
                                                                max_iter=3500,
-                                                               verbose=True)],
-            'classification__C': [0.1, 1, 10, 100],
+                                                               verbose=verbose)],
+            'classification__C': [0.1, 1, 10, 100, 1000],
             'classification__l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9],
         },
         'Random Forest': {
@@ -91,7 +94,7 @@ def cv_grid_search(train_features: pd.DataFrame,
             'classification': [neural_network.MLPRegressor(learning_rate='adaptive',
                                                            tol=1E-4,
                                                            max_iter=3000,
-                                                           verbose=True)],
+                                                           verbose=verbose)],
             'classification__hidden_layer_sizes': [(100), (20, 50, 100), (100, 50, 20)],
             'classification__learning_rate_init': [1, 0.1, 1E-2, 1E-3, 1E-4]
         },
@@ -129,7 +132,10 @@ def cv_grid_search(train_features: pd.DataFrame,
             predict_table.append(pd.Series(y, index=test_targets.index, name=f"{key}"))
 
     # Collect the predictions of the testing sets
-    predict_table = pd.concat(predict_table, axis=1)
+    if not test_targets is None and not test_features is None:
+        predict_table = pd.concat(predict_table, axis=1)
+    else:
+        predict_table = pd.DataFrame() # Return empty dataframe if something went wrong
     return best_params, results, predict_table, best_estimators
 
 
@@ -193,13 +199,14 @@ def model_building(train_features: pd.DataFrame,
     return models, results
 
 class ModelBuilder(object):
-    def __init__(self):
+    def __init__(self, *args, verbose=False, **kwargs):
         super(ModelBuilder, self).__init__()
 
         self.saved_state = {
             'estimators': None,
             'best_params': None
         }
+        self.verbose = verbose
 
     def load(self, f: Path):
         r"""
@@ -220,16 +227,18 @@ class ModelBuilder(object):
     def fit(self,
             train_features: pd.DataFrame,
             train_targets: pd.DataFrame,
-            test_features: pd.DataFrame,
-            test_targets: pd.DataFrame):
+            test_features: pd.DataFrame = None,
+            test_targets: pd.DataFrame = None) -> Tuple[pd.DataFrame]:
         best_params, results, predict_table, best_estimators = cv_grid_search(train_features,
                                                                               train_targets,
                                                                               test_features,
-                                                                              test_targets)
+                                                                              test_targets,
+                                                                              verbose=self.verbose)
         self.saved_state['estimators'] = best_estimators
         self.saved_state['best_params'] = best_params
+        return results, predict_table
 
-    def predict(self, features: pd.DataFrame):
+    def predict(self, features: pd.DataFrame) -> pd.DataFrame:
         r"""
         Predict the class supplied features.
 
@@ -240,6 +249,10 @@ class ModelBuilder(object):
             (dict)
         """
         assert self.saved_state['estimators'] is not None, "Call fit() or load() first."
-        estimators = self.saved_state['estimator']
-        return {v: estimators[v].predict(features) for v in estimators}
+        estimators = self.saved_state['estimators']
+        d = {v: estimators[v].predict(features) for v in estimators}
+        df = pd.DataFrame.from_dict(d)
+        df['ID'] = features.index
+        df.set_index('ID', drop=True, inplace=True)
+        return df
 
