@@ -1,0 +1,11 @@
+Extractor:
+  id_globber: "^[0-9A-Z]+"
+  pyrad_param_file: "../assets/t2wfs/norm_graph.yml"
+
+Selector:
+  criteria_threshold: (0.9,0.9, 0.99)
+  n_trials: 100
+  boot_runs: 250
+  boot_ratio: (0.8, 1.0)
+  thres_percentage: 0.8
+
