@@ -17,6 +17,7 @@ import multiprocessing as mpi
 from tqdm.auto import *
 from functools import partial
 from RENT import RENT, stability
+from typing import Optional
 
 import joblib
 global logger
@@ -24,7 +25,8 @@ global logger
 __all__ = ['FeatureSelector', 'supervised_features_selection', 'initial_feature_filtering']
 
 def compute_ICC(featset_A: pd.DataFrame,
-                featset_B: pd.DataFrame) -> pd.DataFrame:
+                featset_B: pd.DataFrame,
+                ICC_form: Optional[str] = 'ICC2k') -> pd.DataFrame:
     r"""
     Compute the ICC of feature calculated from two sets of data. Note that this function does not check the senity of
     the provided dataframe. The dataframe should look like this:
@@ -108,7 +110,7 @@ def compute_ICC(featset_A: pd.DataFrame,
     df['Segmentation'] = df['Segmentation'].astype(str)
 
     # Compute ICC of features
-    outted_features = []
+    outted_features = []    # TODO: depricate this
     feature_names = list(set(df.index))
     icc_df = pd.DataFrame()
     pool = mpi.Pool(mpi.cpu_count())
@@ -127,7 +129,11 @@ def compute_ICC(featset_A: pd.DataFrame,
         icc_df = icc_df.append(icc)
 
     # Select only ICC1
-    KK = icc_df.drop(["ICC2", "ICC3", "ICC1k", "ICC2k", "ICC3k"], level=1)
+    drop_this = ["ICC1", "ICC2", "ICC3", "ICC1k", "ICC2k", "ICC3k"]
+    if not ICC_form in drop_this:
+        raise AttributeError(f"ICC form can only be one of the following: {drop_this}")
+    drop_this.remove(ICC_form)
+    KK = icc_df.drop(drop_this, level=1)
     KK = KK.reset_index()
 
     # Obtain the index back
@@ -278,7 +284,7 @@ def supervised_features_selection(features: pd.DataFrame,
                                   l1_ratio: Union[float,Iterable[float]],
                                   *args,
                                   criteria_threshold: Iterable[float] = (0.8, 0.8, 0.99),
-                                  n_features: int = None,
+                                  n_features: int = 25,
                                   n_splits: int = 5,
                                   n_trials: int = 100,
                                   boosting: bool = True,
@@ -354,21 +360,23 @@ def supervised_features_selection(features: pd.DataFrame,
     logger.info(f"RENT features: {selected_features}")
 
     #|=========================|
-    #| Feature select features |
+    #| Final selected features |
     #|=========================|
-    # Conver the coeffients to weights
+    # Convert the coeffients to weights
     coefs_df = pd.DataFrame(np.concatenate(model._weight_list, axis=0).T, index=_features_names)
     coefs_df = coefs_df.loc[selected_features]
 
     # normalize the coefficient vector of each model to normal vector (magnitude = 1)
-    coefs_df = coefs_df/ coefs_df.pow(2).sum().pow(.5)
+    coefs_df = coefs_df / coefs_df.pow(2).sum().pow(.5)
 
     # rank the coefs based on their mean and variance, large |mean| and small variance is desired.
     mean_ranks = (coefs_df.shape[0] - coefs_df.T.mean().argsort()) # smaller rank is better
-    var_ranks = coefs_df.T.std().argsort() # smaller rank is better
-    avg_ranks = (mean_ranks + 0.5 * var_ranks) / 1.5
+                                                                   # (reverse sorted, mean larger = more important)
+    var_ranks = coefs_df.T.std().argsort() # smaller rank is better, variance smaller = more stable
+    avg_ranks = (mean_ranks + 0.5 * var_ranks) / 1.5 # weight sum of these two average.
 
     # remove lower rank features
+    n_features = min(len(avg_ranks), n_features)    # no lesser than originally proposed features
     _init_features_index = avg_ranks.sort_values()[:n_features]
 
     # Construct the suggested features
@@ -394,7 +402,7 @@ def features_selection(features_a: pd.DataFrame,
                        boosting: bool = True):
     r"""
     Features selection wrapper function, execute:
-    1. initial feature filtring `initial_feature_filtering`
+    1. initial feature filtering `initial_feature_filtering`
     2. normalization of features `features_normalization`
     3. RENT/BRENT `supervised_features_selection`
 
@@ -536,14 +544,6 @@ class FeatureSelector(object):
                  boosting:           Optional[bool] = True,
                  ):
         super(FeatureSelector, self).__init__()
-
-        self.criteria_threshold = criteria_threshold
-        self.n_trials = n_trials
-        self.boot_runs = boot_runs
-        self.boot_ratio = boot_ratio
-        self.thres_percentage = thres_percentage
-        self.return_freq = return_freq
-        self.boosting = boosting
         self.logger = MNTSLogger[__class__.__name__]
 
         setting = {
@@ -560,6 +560,18 @@ class FeatureSelector(object):
             'feat_freq': None,
             'setting': setting
         }
+
+    @property
+    def selected_features(self):
+        return self.saved_state['selected_features']
+
+    @selected_features.setter
+    def selected_features(self, v):
+        raise ArithmeticError("Selected features should not be manually asigned.")
+
+    @property
+    def setting(self):
+        return self.saved_state['setting']
 
     def load(self, f: Path):
         r"""
@@ -590,19 +602,26 @@ class FeatureSelector(object):
             X_b (pd.DataFrame, Optional):
                 Radiomics features from another segmentation. Aims to filter away features that are susceptable to
                 to inter-observer changes in the segmentation. Default to None.
+
+        Returns:
+            feats (pd.DataFrame):
+                feats is the tuple fo (features frequency, features tuple)
         """
         feats = bootstrapped_features_selection(X_a.T,
                                                 y,
                                                 X_b.T if X_b is not None else None,
-                                                criteria_threshold=self.criteria_threshold,
-                                                n_trials=self.n_trials, boot_runs=self.boot_runs,
-                                                boot_ratio=self.boot_ratio, thres_percentage=self.thres_percentage,
-                                                return_freq=True, boosting=self.boosting)
+                                                criteria_threshold=self.setting['criteria_threshold'],
+                                                n_trials=self.setting['n_trials'],
+                                                boot_runs=self.setting['boot_runs'],
+                                                boot_ratio=self.setting['boot_ratio'],
+                                                thres_percentage=self.setting['thres_percentage'],
+                                                return_freq=True,
+                                                boosting=self.setting['boosting'])
         self.logger.info(f"Selected {len(feats[1])} features: {feats[1]}")
 
         self.saved_state['selected_features'] = feats[1]
         self.saved_state['feat_freq'] = feats[0]
-        if self.return_freq:
+        if self.setting['return_freq']:
             return feats
         else:
             if X_b is not None:
