@@ -22,7 +22,7 @@ from typing import Optional
 import joblib
 global logger
 
-__all__ = ['FeatureSelector', 'supervised_features_selection', 'initial_feature_filtering']
+__all__ = ['FeatureSelector', 'supervised_features_selection', 'preliminary_feature_filtering']
 
 def compute_ICC(featset_A: pd.DataFrame,
                 featset_B: pd.DataFrame,
@@ -128,7 +128,6 @@ def compute_ICC(featset_A: pd.DataFrame,
         icc.set_index('Type', append=True, inplace=True)
         icc_df = icc_df.append(icc)
 
-    # Select only ICC1
     drop_this = ["ICC1", "ICC2", "ICC3", "ICC1k", "ICC2k", "ICC3k"]
     if not ICC_form in drop_this:
         raise AttributeError(f"ICC form can only be one of the following: {drop_this}")
@@ -210,10 +209,10 @@ def T_test_filter(features: pd.DataFrame,
 
     return T_test_pvals
 
-def initial_feature_filtering(features_a: pd.DataFrame,
-                              features_b: pd.DataFrame,
-                              targets: pd.DataFrame,
-                              ):
+def preliminary_feature_filtering(features_a: pd.DataFrame,
+                                  features_b: pd.DataFrame,
+                                  targets: pd.DataFrame,
+                                  ):
     r"""
     Perform feature selction following the steps:
     1. p-values of features < .001
@@ -236,7 +235,7 @@ def initial_feature_filtering(features_a: pd.DataFrame,
     Returns:
 
     """
-    logger = MNTSLogger['initial_feature_filtering']
+    logger = MNTSLogger['preliminary_feature_filtering']
 
     # Drop features known to be useless
     for features in [features_a, features_b]:
@@ -306,19 +305,20 @@ def supervised_features_selection(features: pd.DataFrame,
         targets:
             Row should be samples and a column 'Status' should hold the class.
         n_features:
-
+            (Deprecated)
         n_splits (int):
             Split ratios of train-test group for random bootstrapping.
         n_trials (int):
-            Number of runs to select the final model features from. Equivalent to $K$ in the original paper.
+            Number of runs to select the final model features from. Equivalent to $K$ in the original paper. If this is
+            set to 1, a single run of elastic net will be executed instead.
 
     Returns:
 
     """
     logger = MNTSLogger['sup-featselect']
-    #|==========|
-    #| Run RENT |
-    #|==========|
+    #|===================|
+    #| Run RENT or BRENT |
+    #|===================|
 
     # C in RENT is the inverse of regularization term alpha in scipy
     C = 1/alpha
@@ -340,48 +340,70 @@ def supervised_features_selection(features: pd.DataFrame,
     _map = {_f: o for _f, o in zip(_features_names, _ori_index)}
     features.index = _features_names
 
+    if n_trials <= 1: # One elastic net run
+        # Warn if boost is not 0
+        if boosting:
+            logger.warning("n_trials = 1 but boosting was turned on.")
 
-    model = RENT.RENT_Regression(data=pd.DataFrame(features.T),
-                                 target=_targets[_targets.columns[0]].to_numpy().ravel(),
-                                 feat_names=_features_names,
-                                 C=C,
-                                 l1_ratios=l1_ratio,
-                                 autoEnetParSel=False,
-                                 poly='OFF',
-                                 testsize_range=(1/float(n_splits), 1/float(n_splits)),
-                                 K=n_trials,
-                                 random_state=0,
-                                 verbose=1,
-                                 scale=False,
-                                 boosting=boosting) # BRENT or RENT
-    model.train()
-    selected_features = model.select_features(*criteria_threshold)
-    selected_features = features.index[selected_features]
-    logger.info(f"RENT features: {selected_features}")
+        # if the l1_ratio is an array
+        if isinstance(l1_ratio, (list, tuple, np.ndarray)):
+            l1_ratio = l1_ratio[0]
+        model = linear_model.ElasticNet(alpha = alpha, l1_ratio=l1_ratio, tol=1E-5)
+        model.fit(pd.DataFrame(features.T),
+                  _targets[_targets.columns[0]].to_numpy().ravel())
 
-    #|=========================|
-    #| Final selected features |
-    #|=========================|
-    # Convert the coeffients to weights
-    coefs_df = pd.DataFrame(np.concatenate(model._weight_list, axis=0).T, index=_features_names)
-    coefs_df = coefs_df.loc[selected_features]
+        # Non-zero coef means the feature is selcted
+        selected_features = np.argwhere(model.coef_ != 0).ravel()
+        selected_features = features.index[selected_features]
+        logger.info(f"ENET features: {selected_features}")
 
-    # normalize the coefficient vector of each model to normal vector (magnitude = 1)
-    coefs_df = coefs_df / coefs_df.pow(2).sum().pow(.5)
+        # Construct pd index
+        selected_features = pd.MultiIndex.from_tuples([_map[i] for i in selected_features])
 
-    # rank the coefs based on their mean and variance, large |mean| and small variance is desired.
-    mean_ranks = (coefs_df.shape[0] - coefs_df.T.mean().argsort()) # smaller rank is better
-                                                                   # (reverse sorted, mean larger = more important)
-    var_ranks = coefs_df.T.std().argsort() # smaller rank is better, variance smaller = more stable
-    avg_ranks = (mean_ranks + 0.5 * var_ranks) / 1.5 # weight sum of these two average.
+    else:
+        model = RENT.RENT_Regression(data=pd.DataFrame(features.T),
+                                     target=_targets[_targets.columns[0]].to_numpy().ravel(),
+                                     feat_names=_features_names,
+                                     C=C,
+                                     l1_ratios=l1_ratio,
+                                     autoEnetParSel=False,
+                                     poly='OFF',
+                                     testsize_range=(1/float(n_splits), 1/float(n_splits)),
+                                     K=n_trials,
+                                     random_state=0,
+                                     verbose=1,
+                                     scale=False,
+                                     boosting=boosting) # BRENT or RENT
+        model.train()
+        selected_features = model.select_features(*criteria_threshold)
+        selected_features = features.index[selected_features]
+        logger.info(f"RENT features: {selected_features}")
 
-    # remove lower rank features
-    n_features = min(len(avg_ranks), n_features)    # no lesser than originally proposed features
-    _init_features_index = avg_ranks.sort_values()[:n_features]
+        #|=========================|
+        #| Final selected features |
+        #|=========================|
+        # Convert the coeffients to weights
+        coefs_df = pd.DataFrame(np.concatenate(model._weight_list, axis=0).T, index=_features_names)
+        coefs_df = coefs_df.loc[selected_features]
+
+        # normalize the coefficient vector of each model to normal vector (magnitude = 1)
+        coefs_df = coefs_df / coefs_df.pow(2).sum().pow(.5)
+
+        # rank the coefs based on their mean and variance, large |mean| and small variance is desired.
+        mean_ranks = (coefs_df.shape[0] - coefs_df.T.mean().argsort()) # smaller rank is better
+                                                                       # (reverse sorted, mean larger = more important)
+        var_ranks = coefs_df.T.std().argsort() # smaller rank is better, variance smaller = more stable
+        avg_ranks = (mean_ranks + 0.5 * var_ranks) / 1.5 # weight sum of these two average.
+
+        # remove lower rank features
+        n_features = min(len(avg_ranks), n_features)    # no lesser than originally proposed features
+        _init_features_index = avg_ranks.sort_values()[:n_features]
+
+        # Construct pd index
+        selected_features = pd.MultiIndex.from_tuples([_map[i] for i in _init_features_index.index])
 
     # Construct the suggested features
     features.index = _ori_index
-    selected_features = pd.MultiIndex.from_tuples([_map[i] for i in _init_features_index.index])
     out_features = features.loc[selected_features]
     return out_features.sort_index(level=0)
 
@@ -402,7 +424,7 @@ def features_selection(features_a: pd.DataFrame,
                        boosting: bool = True):
     r"""
     Features selection wrapper function, execute:
-    1. initial feature filtering `initial_feature_filtering`
+    1. initial feature filtering `preliminary_feature_filtering`
     2. normalization of features `features_normalization`
     3. RENT/BRENT `supervised_features_selection`
 
@@ -420,7 +442,7 @@ def features_selection(features_a: pd.DataFrame,
 
     # Initial feature filtering using quantitative methods
     if features_b is not None:
-        feats_a, feats_b = initial_feature_filtering(features_a, features_b, targets)
+        feats_a, feats_b = preliminary_feature_filtering(features_a, features_b, targets)
     else:
         # Just do variance filter and rop the useless columns
         var_filter = feature_selection.VarianceThreshold(threshold=.95*(1-.95))
@@ -498,17 +520,19 @@ def bootstrapped_features_selection(features_a: pd.DataFrame,
         features_dict[i] = features_names
         logger.info(f"=== Done {i} ===")
 
-    # Return features with more than certain percentagle of appearance
+    # Return features with more than certain percentage of appearance
     # Count features frequencies
-    all_features = set.union(*[set(i) for i in features_list])
-    features_frequencies = [
-        pd.Series({features_name_map[a]: features_dict[i].count(a) for a in features_dict[i]}, name=f'run_{i:02d}')
-        for i in range(boot_runs)]
-    features_frequencies = pd.concat(features_frequencies, axis=1).fillna(0)
-    features_frequencies['Sum'] = features_frequencies.sum(axis=1)
-    features_frequencies['Rate'] = features_frequencies['Sum'] / float(boot_runs)
+    if boot_runs > 0:
+        all_features = set.union(*[set(i) for i in features_list])
+        features_frequencies = [
+            pd.Series({features_name_map[a]: features_dict[i].count(a) for a in features_dict[i]}, name=f'run_{i:02d}')
+            for i in range(boot_runs)]
+        features_frequencies = pd.concat(features_frequencies, axis=1).fillna(0)
+        features_frequencies['Sum'] = features_frequencies.sum(axis=1)
+        features_frequencies['Rate'] = features_frequencies['Sum'] / float(boot_runs)
 
-    selected_features = features_frequencies[features_frequencies['Rate'] > thres_percentage].index
+        selected_features = features_frequencies[features_frequencies['Rate'] > thres_percentage].index
+
     if return_freq:
         return features_frequencies, selected_features
     else:
@@ -546,6 +570,7 @@ class FeatureSelector(object):
         super(FeatureSelector, self).__init__()
         self.logger = MNTSLogger[__class__.__name__]
 
+        # These are controlled by yaml loaded by the controller.
         setting = {
             'criteria_threshold': criteria_threshold,
             'n_trials': n_trials,
