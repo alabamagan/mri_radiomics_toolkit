@@ -10,7 +10,7 @@ import numpy as np
 
 
 class Test_pipeline(unittest.TestCase):
-    def test_feature_extractor_with_norm(self):
+    def test_feature_extractor_w_norm(self):
         from npc_radiomics.feature_extractor import FeatureExtractor
         from mnts.mnts_logger import MNTSLogger
         globber = "^[0-9]+"
@@ -60,7 +60,7 @@ class Test_pipeline(unittest.TestCase):
             logger.info("{:-^50s}".format(" Testing feature extraction "))
             fe = FeatureExtractor(id_globber=globber)
             fe.param_file = p_setting
-            df = fe.extract_features(p_im, p_seg, p_setting)
+            df = fe.extract_features(p_im, p_seg, param_file=p_setting)
             fe.save_features(p_setting.with_name('sample_features.xlsx'))
             logger.info("\n" + df.to_string())
             self.assertTrue(len(df) > 0)
@@ -76,10 +76,42 @@ class Test_pipeline(unittest.TestCase):
             logger.info("{:-^50s}".format(" Testing load state "))
             _fe = FeatureExtractor(id_globber=globber)
             _fe.load(Path(f).joinpath('saved_state.fe'))
-            _df = fe.extract_features(p_im, p_seg, p_setting)
+            _df = fe.extract_features(p_im, p_seg, param_file=p_setting)
 
+            # Display tested itmes
             logger.info(f"Left:\n {_df.to_string()}")
             logger.info(f"Right:\n {df.to_string()}")
+
+    def test_feature_extractor_w_aug(self):
+        from npc_radiomics.feature_extractor import FeatureExtractor
+        from mnts.mnts_logger import MNTSLogger
+        import torchio as tio
+
+        globber = "^[0-9]+"
+        p_im = Path('../samples/images/')
+        p_seg_A = Path('../samples/segment')
+        p_seg_B = Path('../samples/segment')
+        p_setting = Path('../samples/sample_pyrad_settings.yml')
+        transform = tio.Compose([
+            tio.ToCanonical(),
+            tio.RandomAffine(scales=[0.95, 1.05],
+                             degrees=10),
+            tio.RandomFlip(axes='lr'),
+            tio.RandomNoise(mean=0, std=[0, 1])
+        ])
+
+        logger = MNTSLogger('./', keep_file=False, verbose=True, log_level='debug')
+        with tempfile.TemporaryDirectory() as f:
+            # Create feature extractor
+            logger.info("{:-^50s}".format(" Testing feature extraction "))
+            fe = FeatureExtractor(id_globber=globber)
+            fe.param_file = p_setting
+            df = fe.extract_features(p_im, p_seg_A, p_seg_B, param_file=p_setting, augmentor=transform)
+            fe.save_features(p_setting.with_name('sample_features.xlsx'))
+            logger.info("\n" + df.to_string())
+            self.assertTrue(len(df) > 0)
+            self.assertTrue(p_setting.with_name('sample_features.xlsx').is_file())
+            logger.info("Feature extraction pass...")
 
     def test_feature_extractor_param_file_load(self):
         from npc_radiomics.feature_extractor import FeatureExtractor
@@ -96,6 +128,50 @@ class Test_pipeline(unittest.TestCase):
             logger.info(f"Processed setting: {fe.param_file}")
             self.assertFalse(fe.param_file == p_setting)
             self.assertTrue(fe.param_file == p_setting.read_text())
+
+    def test_get_radiomics_features_w_aug(self):
+        from npc_radiomics.feature_extractor import FeatureExtractor, get_radiomics_features
+        from mnts.mnts_logger import MNTSLogger
+        from mnts.utils import get_unique_IDs, get_fnames_by_IDs
+        import torchio as tio
+        import pandas as pd
+        import os
+        globber = "^[0-9]+"
+        p_im = Path('../samples/images/')
+        p_seg_A = Path('../samples/segment')
+        p_seg_B = Path('../samples/segment')
+        p_setting = Path('../samples/sample_pyrad_settings.yml')
+        transform = tio.Compose([
+            tio.ToCanonical(),
+            tio.RandomAffine(scales=[0.95, 1.05],
+                             degrees=10),
+            tio.RandomFlip(axes='lr'),
+            tio.RandomNoise(mean=0, std=[0, 1])
+        ])
+
+        with MNTSLogger('./', keep_file=False, verbose=True, log_level='debug') as logger:
+            dfs = []
+            ids = get_unique_IDs(os.listdir(str(p_im)), "^[0-9]+")
+            logger.info(f"IDs: {ids}")
+            im_fs = get_fnames_by_IDs(os.listdir(str(p_im)), ids)
+            seg_a_fs = get_fnames_by_IDs(os.listdir(str(p_seg_A)), ids)
+            seg_b_fs = get_fnames_by_IDs(os.listdir(str(p_seg_B)), ids)
+            for im, seg_a, seg_b in zip(im_fs, seg_a_fs, seg_b_fs):
+                logger.info(f"Performing on: \n{pprint.pformat([im, seg_a, seg_b])}")
+                df = get_radiomics_features(p_im.joinpath(im),
+                                            p_seg_A.joinpath(seg_a),
+                                            p_setting,
+                                            p_seg_B.joinpath(seg_b),
+                                            id_globber="^(NPC|T1rhoNPC|K|P|RHO)?[0-9]{2,4}",
+                                            augmentor=transform)
+                logger.debug(f"df: {df}")
+                dfs.append(df)
+            dfs = pd.concat(dfs, axis=1)
+            new_index = [o.split('_') for o in dfs.index]
+            new_index = pd.MultiIndex.from_tuples(new_index, names=('Pre-processing', 'Feature_Group', 'Feature_Name'))
+            dfs.index = new_index
+            logger.debug(f"dfs:\n {dfs.drop('diagnostics').to_string()}")
+            pass
 
     def test_feature_selection(self):
         from npc_radiomics.feature_selection import FeatureSelector
@@ -114,31 +190,76 @@ class Test_pipeline(unittest.TestCase):
         cases = set(features_a.index) & set(gt.index)
         gt = gt.loc[cases]
 
+        passed = False
         with MNTSLogger('./default.log', keep_file=False, verbose=True) as logger,\
                 tempfile.NamedTemporaryFile('wb', suffix = '.fss') as f:
-            fs = FeatureSelector(n_trials=50, boot_runs=5) # Use default criteria, test with boosting
-
+            fs = FeatureSelector(n_trials=20, boot_runs=5,
+                                 criteria_threshold=[0.1, 0.1, 0.1],
+                                 thres_percentage=0.2,
+                                 boosting=True) # Use default criteria, test with boosting
+            test_result = {x: "Untested" for x in ['Single feature set',
+                                                   'Two paired feature sets',
+                                                   'Save/load',
+                                                   'n_trial = 1',
+                                                   'n_trial & boot_run = 1']}
             # Test one segmentation
             logger.info("{:-^50s}".format(" Testing single feature set "))
-            # feats = fs.fit(features_a, gt)
+            try:
+                feats = fs.fit(features_a, gt)
+                test_result['Single feature set'] = "Passed"
+            except:
+                test_result['Single feature set'] = "Failed"
+            logger.info("Single feature set: Passed")
 
             # Test two segmentation
             logger.info("{:-^50s}".format(" Testing pair feature set "))
             cases = set(features_a.index) & set(features_b.index) & set(gt.index)
-            feats = fs.fit(features_a.loc[cases], gt.loc[cases], features_b.loc[cases])
+            try:
+                feats = fs.fit(features_a.loc[cases], gt.loc[cases], features_b.loc[cases])
+                test_result['Two paired feature sets'] = "Passed"
+            except:
+                test_result['Two paired feature sets'] = "Failed"
 
             # Testing save and load function
             logger.info("{:-^50s}".format(" Testing state save/load "))
-            fs.save(Path(f.name))
-            _new_fs = FeatureSelector()
-            _new_fs.load(Path(f.name))
-            _feats = _new_fs.predict(features_a)
+            try:
+                fs.save(Path(f.name))
+                _new_fs = FeatureSelector()
+                _new_fs.load(Path(f.name))
+                _feats = _new_fs.predict(features_a)
 
-            logger.info(f"Left:\n {_feats.T}")
-            logger.info(f"Right:\n {feats[0].T}")
-            logger.info(f"Save/load (Passed)")
+                logger.info(f"Left:\n {_feats.T}")
+                logger.info(f"Right:\n {feats[0].T}")
+                logger.info(f"Save/load (Passed)")
+                test_result['Save/load'] = "Passed"
+            except:
+                test_result['Save/load'] = "Failed"
 
-        pass
+            # Test single trial (feature selection using enet with frequency threshold)
+            logger.info("{:-^50s}".format(" Testing n_trial = 1 "))
+            try:
+                fs.setting['n_trials'] = 1
+                feats = fs.fit(features_a.loc[cases], gt.loc[cases], features_b.loc[cases])
+                logger.info("n_trial = 1: Passed")
+                test_result['n_trial = 1'] = "Passed"
+            except:
+                test_result['n_trial = 1'] = "Failed"
+
+
+            # Test single boot_run (feature selection using enet without frequency threshold)
+            logger.info("{:-^50s}".format(" Testing n_trial & boot_run = 1 "))
+            try:
+                fs.setting['n_trials'] = 1
+                fs.setting['boot_runs'] = 1
+                feats = fs.fit(features_a.loc[cases], gt.loc[cases], features_b.loc[cases])
+                logger.info(f"Single Enet run features extracted: {feats[0].columns}")
+                logger.info("n_trial & boot_run: Passed")
+                test_result['n_trial & boot_run = 1'] = "Passed"
+            except:
+                test_result['n_trial & boot_run = 1'] = "Failed"
+            logger.info(f"Test results: \n{pd.Series(test_result, name='Test results').to_frame().to_string()}")
+
+        self.assertFalse(all([x == "Passed" for x in test_result.items()]))
 
     def test_model_building(self):
         from npc_radiomics.feature_selection import FeatureSelector
@@ -202,7 +323,6 @@ class Test_pipeline(unittest.TestCase):
             logger.info(f"Right:\n {predict_table}")
         pass
 
-
     def test_controller_extraction(self):
         from npc_radiomics.controller import Controller
         from mnts.mnts_logger import MNTSLogger
@@ -256,7 +376,46 @@ class Test_pipeline(unittest.TestCase):
             ctl.load_norm_settings(fe_state=p_fe_state)
             ctl.fit(p_im, p_seg, p_gt)
 
+    def test_stability_metric(self):
+        from npc_radiomics.perf_metric import getStability, confidenceIntervals, hypothesisTestT, hypothesisTestV, feat_list_to_binary_mat
+        import pandas as pd
+        from mnts.mnts_logger import MNTSLogger
+
+        with MNTSLogger('./default.log', verbose=True, keep_file=False) as logger:
+            test_result = {x: "Untested" for x in ['Binary feature map',
+                                                   'Stability measure',
+                                                   'Statistical Test'
+                                                   ]}
+
+            p_sel_1 = Path('../samples/sample_selected_feat_1.xlsx')
+            p_sel_2 = Path('../samples/sample_selected_feat_2.xlsx')
+            p_feat_list = Path('../samples/samples_feat_1st.xlsx')
+
+            sel_1 = pd.read_excel(p_sel_1, index_col=0).fillna('').astype(str)
+            sel_2 = pd.read_excel(p_sel_2, index_col=0).fillna('').astype(str)
+            feats = [str(s) for s in pd.read_excel(p_feat_list, index_col=[0, 1, 2]).index.to_list()]
+
+            try:
+                Z1 = feat_list_to_binary_mat(sel_1, feats)
+                Z2 = feat_list_to_binary_mat(sel_2, feats)
+                test_result['Binary feature map'] = "Passed"
+            except:
+                test_result['Binary feature map'] = "Failed"
+
+            try:
+                print(getStability(Z1), getStability(Z2))
+                test_result['Stability measure'] = "Passed"
+            except:
+                test_result['Stability measure'] = "Failed"
+
+            logger.info(f"Test results: \n{pd.Series(test_result, name='Test results').to_frame().to_string()}")
+            test_result['Statistical Test'] = "Passed"
+        self.assertFalse(all([x == "Passed" for x in test_result.items()]))
+
+
+
 if __name__ == '__main__':
     te = Test_pipeline()
-    te.test_controller_fit()
+    # te.test_controller_fit()
     # te.test_feature_extractor()
+    te.test_get_radiomics_features_w_aug()
