@@ -403,7 +403,7 @@ class Test_pipeline(unittest.TestCase):
                 test_result['Binary feature map'] = "Failed"
 
             try:
-                print(getStability(Z1), getStability(Z2))
+                logger.info(f"{getStability(Z1)}, {getStability(Z2)}")
                 test_result['Stability measure'] = "Passed"
             except:
                 test_result['Stability measure'] = "Failed"
