@@ -5,14 +5,18 @@ import tempfile
 import zipfile
 import pprint
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, Sequence
 from zipfile import ZipFile, ZIP_DEFLATED
 from io import BytesIO
+from functools import partial
 
 import SimpleITK as sitk
 import numpy as np
 import pandas as pd
 import joblib
+import torchio as tio
+import torch
+
 from mnts.scripts.normalization import run_graph_inference
 from mnts.mnts_logger import MNTSLogger
 from mnts.utils import get_unique_IDs, load_supervised_pair_by_IDs, repeat_zip
@@ -49,9 +53,11 @@ NyulNormalizer:
 def get_radiomics_features(fn: Path,
                            mn: Path,
                            param_file: Path,
-                           id_globber ="^[0-9a-zA-Z]+") -> pd.DataFrame:
+                           *args,
+                           id_globber: str = "^[0-9a-zA-Z]+",
+                           augmentor: tio.Compose = None) -> pd.DataFrame:
     r"""
-    Return the featuers computed by pyramdiomics in a `pd.DataFrame` structure.
+    Return the features computed by pyramdiomics in a `pd.DataFrame` structure.
 
     Args:
         fn (Path):
@@ -60,34 +66,65 @@ def get_radiomics_features(fn: Path,
             Segmentation file directory.
         param_file (Path):
             Path to the pyradiomics setting.
+        *args (Sequence of Path):
+            If this is provided, they directory is treated as extra segmentation
     Returns:
         pd.DataFrame
     """
     assert fn.is_file() and mn.is_file(), f"Cannot open images or mask at: {fn} and {mn}"
 
     try:
+        logger = MNTSLogger['radiomics_features']
         im = sitk.ReadImage(str(fn))
         msk = sitk.ReadImage(str(mn))
+        if args is not None:
+            logger.info(f"Get multiple segmentations, got {1 + len(args)}")
+            msk = [msk] + [sitk.ReadImage(str(a)) for a in args]
+        else:
+            more_mask = [msk]
         # check if they have same spacing
-        if not all(np.isclose(im.GetSpacing(), msk.GetSpacing(), atol=1E-4)):
-            MNTSLogger['radiomics_features'].warning(f"Detected differences in spacing! Resampling "
-                                                     f"{im.GetSpacing()} -> {msk.GetSpacing()}...")
-            filt = sitk.ResampleImageFilter()
-            filt.SetReferenceImage(im)
-            msk = filt.Execute(msk)
-        # Check if image has nan
-        if not (np.isfinite(sitk.GetArrayFromImage(im)).all() and np.isfinite(sitk.GetArrayFromImage(msk)).all()):
-            MNTSLogger['radiomics_features'].warning(f"Detected NAN in image {str(fn    )}")
+        for i, _msk in enumerate(msk):
+            if not all(np.isclose(im.GetSpacing(), _msk.GetSpacing(), atol=1E-4)):
+                logger.warning(f"Detected differences in spacing! Resampling "
+                                                         f"{_msk.GetSpacing()} -> {im.GetSpacing()}...")
+                filt = sitk.ResampleImageFilter()
+                filt.SetReferenceImage(im)
+                msk[i] = filt.Execute(_msk)
 
+            if not (np.isfinite(sitk.GetArrayFromImage(im)).all() and np.isfinite(sitk.GetArrayFromImage(_msk)).all()):
+                logger.warning(f"Detected NAN in image {str(fn    )}")
+
+        # If an augmentor is given, do augmentation first
+        if not augmentor is None:
+            # Reseed becaus multi-processing thread might fork the same random state
+            np.random.seed()
+            torch.random.seed()
+
+            logger.info(f"Augmentor was given: {augmentor}")
+            _ = {f'mask_{i}': tio.LabelMap.from_sitk(_msk) for i, _msk in enumerate(msk)}
+            subject = tio.Subject(image=tio.ScalarImage.from_sitk(im), **_)
+            logger.debug(f"Original subject: {subject}")
+            subject = augmentor.apply_transform(subject)
+            im = subject['image'].as_sitk()
+            msk = [subject[f'mask_{i}'].as_sitk() for i in range(len(msk))]
 
         feature_extractor = featureextractor.RadiomicsFeatureExtractor(str(param_file.resolve()))
+        dfs = []
+        for i, _msk in enumerate(msk):
+            X = feature_extractor.execute(im, sitk.Cast(_msk, sitk.sitkUInt8))
+            df = pd.DataFrame.from_dict({k: (v.tolist() if hasattr(v, 'tolist') else str(v))
+                                         for k, v in X.items()}, orient='index')
+            df.columns = [f'{re.search(id_globber, fn.name).group()}']
+            if len(msk) > 1:
+                df.columns = pd.MultiIndex.from_product([['Segment_' + chr(ord('A') + i)], df.columns])
+            dfs.append(df)
+        if len(dfs) == 1:
+            out = dfs[0]
+        else:
+            out = pd.concat(dfs, axis=1)
+        logger.debug(f"Intermediate result:\n {out}")
+        return out
 
-        features = featureextractor.RadiomicsFeatureExtractor(str(param_file.resolve()))
-        X = feature_extractor.execute(im, sitk.Cast(msk, sitk.sitkUInt8))
-        df = pd.DataFrame.from_dict({k: (v.tolist() if hasattr(v, 'tolist') else str(v))
-                                     for k, v in X.items()}, orient='index')
-        df.columns = [f'{re.search(id_globber, fn.name).group()}']
-        return df
     except Exception as e:
         MNTSLogger['radiomics_features'].error("Error during get_radiomics_features!")
         MNTSLogger['radiomics_features'].exception(e)
@@ -95,7 +132,9 @@ def get_radiomics_features(fn: Path,
 def get_radiomics_features_from_folder(im_dir: Path,
                                        seg_dir: Path,
                                        param_file: Path,
-                                       id_globber ="^[0-9a-zA-Z]+") -> pd.DataFrame:
+                                       *args,
+                                       id_globber: str = "^[0-9a-zA-Z]+",
+                                       augmentor: tio.Compose = None) -> pd.DataFrame:
     r"""
     This pairs up the image and the segmentation files using the global regex globber
 
@@ -103,9 +142,12 @@ def get_radiomics_features_from_folder(im_dir: Path,
         im_dir (Path):
             Folder that contains the image files
         seg_dir (Path):
-            Folder that contians the segmentation files
+            Folder that contains the segmentation files
         param_file (Path):
             Path to the pyradiomics setting.
+        *args:
+            If this exist, arguments will be attached to `mask_dir`, additional features will be extracted
+            if there are more than one masks
 
     Return:
         pd.DataFrame
@@ -113,17 +155,41 @@ def get_radiomics_features_from_folder(im_dir: Path,
     ids = get_unique_IDs(list([str(i.name) for i in im_dir.iterdir()]), id_globber)
 
     # Load the pairs
-    source, mask = load_supervised_pair_by_IDs(str(im_dir), str(seg_dir), ids,
-                                               globber=id_globber, return_pairs=False)
+    if not args is None:
+        mask_dir = [seg_dir] + list(args)
+    else:
+        mask_dir = [seg_dir]
+
+    mask = []
+    for i, msk in enumerate(mask_dir):
+        _source, _mask = load_supervised_pair_by_IDs(str(im_dir), str(msk), ids,
+                                                    globber=id_globber, return_pairs=False)
+        mask.append(_mask)
+        if i == 0:
+            source = _source
+        else:
+            if not len(source) == len(_source):
+                raise IndexError(f"Length of the inputs are incorrect, somethings is wrong with index globbing for "
+                                 f"{str(msk)}.")
+
     source = [im_dir.joinpath(s) for s in source]
-    mask = [seg_dir.joinpath(s) for s in mask]
+    mask = [[mask_dir[i].joinpath(s) for s in mask[i]] for i in range(len(mask))]
+    if not augmentor is None:
+        func = partial(get_radiomics_features, id_globber=id_globber, augmentor=augmentor)
+    else:
+        func = get_radiomics_features
 
     r"""
     Multi-thread
     """
-    z = repeat_zip(source, mask, [param_file])
+    if len(mask) == 1:
+        z = repeat_zip(source, mask[0], [param_file])
+    else:
+        z = repeat_zip(source, mask[0], [param_file], *mask[1:])
     pool = mpi.Pool(mpi.cpu_count())
-    res = pool.starmap_async(get_radiomics_features, z)
+    res = pool.starmap_async(func, z)
+    pool.close()
+    pool.join()
     res = res.get()
     df = pd.concat(res, axis=1)
     new_index = [o.split('_') for o in df.index]
@@ -193,19 +259,28 @@ class FeatureExtractor(object):
         elif outpath.suffix == '.csv':
             self._extracted_features.to_csv(str(outpath.resolve()))
 
-    def extract_features(self, im_path: Path, seg_path: Path, param_file: Optional[Path] = None) -> pd.DataFrame:
+    def extract_features(self,
+                         im_path: Path,
+                         seg_path: Path,
+                          *args,
+                         param_file: Optional[Path] = None,
+                         augmentor: Optional[Union[tio.Compose, Path]] = None) -> pd.DataFrame:
         if param_file is None and self.saved_state['param_file'] is None:
             raise ArithmeticError("Please specify param file.")
         if param_file is None:
             param_file = self.saved_state['param_file']
-        df = get_radiomics_features_from_folder(im_path, seg_path, param_file, id_globber=self.id_globber)
+        df = get_radiomics_features_from_folder(im_path, seg_path, param_file, *args, id_globber=self.id_globber,
+                                                augmentor=augmentor)
         self.saved_state['param_file'] = param_file
         self._extracted_features = df.T
+        if self._extracted_features.index.nlevels > 1:
+            self._extracted_features.sort_index(level=0, inplace=True)
         return self._extracted_features
 
     def extract_features_with_norm(self,
                                    im_path: Path,
                                    seg_path: Path,
+                                   *args,
                                    norm_state_file: Optional[Path] = None,
                                    param_file: Optional[Path] = None) -> pd.DataFrame:
         r"""
@@ -223,6 +298,10 @@ class FeatureExtractor(object):
         with tempfile.NamedTemporaryFile('w', suffix='.yaml') as f, \
              tempfile.TemporaryDirectory() as temp_dir_im, \
              tempfile.TemporaryDirectory() as temp_dir_seg:
+            if args is not None:
+                self._logger.warning("The function extract_features_with_norm() does not support multiple segmentation "
+                                     "yet!")
+
             self._logger.info(f"Created temp directory: ({temp_dir_im}, {temp_dir_seg})")
 
             # The graph yml must exist, use default if not properly specified. Once load, put text into saved_state
@@ -245,7 +324,6 @@ class FeatureExtractor(object):
                       f"-n 12".split(' ')
             self._logger.debug(f"Command for image normalization: {command}")
             run_graph_inference(command)
-            
 
             # normalize the segmentation for spatial transforms
             command = f"--input {seg_path} --state-dir {str(norm_state)} --output {temp_dir_seg} --file {f.name} --verbose " \
@@ -271,7 +349,7 @@ class FeatureExtractor(object):
 
             df = self.extract_features(Path(temp_dir_im).joinpath(ext_node_name),
                                        Path(temp_dir_seg).joinpath(ext_node_name),
-                                       param_file)
+                                       param_file=param_file)
 
             # Cleanup
             try:
