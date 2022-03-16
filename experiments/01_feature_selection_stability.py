@@ -142,19 +142,17 @@ def validate_feature_selection_stability(clt_setting_path: Path,
         features_excel_regexp = r".*trial-(?P<trial_number>\d+)_feature-(?P<feature_set_code>\w+).xlsx"
 
         # Build a pd.Table from this
-        map_dict = {re.search(features_excel_regexp, str(ff)).groups(): str(ff.resolve()) for ff in features_folder.iterdir()}
-        df = pd.Series(map_dict, name='FileNames').to_frame()
+        # map_dict = {re.search(features_excel_regexp, str(ff)).groups(): str(ff.resolve()) for ff in features_folder.iterdir()}
+        # df = pd.Series(map_dict, name='FileNames').to_frame()
 
-        for ids in df.index.levels[0].to_list():
+        # for ids in df.index.levels[0].to_list():
+        for ids in range(100):
             # Skip if trial already ran
             if p_out.is_file():
                 _df = pd.read_excel(str(p_out), index_col=0)
                 if f"Trial-{ids}" in _df.columns:
                     logger.warning(f"Find column 'Trial-{ids}', skipping...")
                     continue
-            # Augmented
-            p_feature_a = Path(df.loc[ids, 'A']['FileNames'])
-            p_feature_b = Path(df.loc[ids, 'B']['FileNames'])
 
             # Orginal features
             p_feature_a = Path('./output/original_feature-A.xlsx')
@@ -172,7 +170,8 @@ def validate_feature_selection_stability(clt_setting_path: Path,
             gt = gt.loc[overlap_index]
 
             # Bootstrap (no replacement)
-            boot_index = sklearn.utils.resample(df_feat_a.index, replace=False, n_samples = int(0.8 * len(df_feat_a)))
+            np.random.seed() # reset the random seed
+            boot_index = sklearn.utils.resample(df_feat_a.index, replace=False, n_samples = int(0.7 * len(df_feat_a)))
             logger.info(f"bootstrapped index: {','.join(boot_index)}")
             df_feat_a = df_feat_a.loc[boot_index]
             df_feat_b = df_feat_b.loc[df_feat_a.index]
@@ -183,6 +182,7 @@ def validate_feature_selection_stability(clt_setting_path: Path,
 
             logger.debug(f"\n{df_feat_a}")
             logger.debug(f"\n{df_feat_b}")
+            logger.debug(f"\n{gt}")
 
             ctl = Controller(setting=p_setting, with_norm=False)
             ctl.selector.fit(df_feat_a, gt, df_feat_b)
@@ -210,17 +210,20 @@ def stability_summary():
         #     validate_feature_selection_stability(p, str(p.with_suffix('_exclude_.xlsx')))
         # validate_feature_selection_stability(Path('./01_configs/C1_elastic_net_only.yml'),
         #                                      '_exclude_C1_elastic_net_only.xlsx')
-        validate_feature_selection_stability(Path('./01_configs/C2_RENT.yml'),
-                                             '_exclude_C2_RENT.xlsx')
+        # validate_feature_selection_stability(Path('./01_configs/C2_RENT.yml'),
+        #                                      '_exclude_C2_RENT.xlsx')
         # validate_feature_selection_stability(Path('./01_configs/C3_BRENT.yml'),
         #                                      '_exclude_C3_BRENT.xlsx')
+        # validate_feature_selection_stability(Path('./01_configs/C4_BoostingRENT.yml'),
+        #                                      '_exclude_C4_BoostingRENT.xlsx')
+        # validate_feature_selection_stability(Path('./01_configs/C5_BootstrapingRENT.yml'),
+        #                                       '_exclude_C5_BootstrappingRENT.xlsx')
+        p_feat_list = Path("./output/trial-000_feature-A.xlsx")
+        select_features = Path('./').glob("_exclude_C*xlsx")
 
-        # p_feat_list = Path("./output/trial-000_feature-A.xlsx")
-        # select_features = Path('./').glob("*xlsx")
-        #
-        # for i in select_features:
-        #     s = get_stability(i, p_feat_list)
-        #     print(f"{i}: {s}")
+        for i in select_features:
+            s = get_stability(i, p_feat_list)
+            print(f"{i}: {s}")
 
 if __name__ == '__main__':
     # generate_augmented_features()
