@@ -1,13 +1,14 @@
 '''
 This file was cloned from https://github.com/nogueirs/JMLR2018/blob/master/python/stability/__init__.py
-The original article proposing this algorithm is [1].
+The method was propsoed in Nogueira et al. 2017.
 
-Docstring and signatures format were revised.
+Docstring and signatures format were revised to google style.
 
 Reference:
 ----------
-[1] Kuncheva, L. I. (2007, February). A stability index for feature selection. In *Artificial intelligence and
-    applications* (pp. 421-427).
+Nogueira, S., Sechidis, K., & Brown, G. (2017). On the stability of feature selection algorithms.
+    J. Mach. Learn. Res., 18(1), 6345-6398.
+
 '''
 
 import numpy as np
@@ -147,17 +148,22 @@ def hypothesisTestT(Z1: np.ndarray,
     Let us assume we have M>1 feature sets and d>0 features in total.
     This function implements the null hypothesis test of Theorem 10 in [1] that test whether 
     two population stabilities are identical.
-    
-    INPUTS:- Two BINARY matrices Z1 and Z2 (given as lists or as numpy.ndarray objects of size M*d).
-             Each row of the binary matrix represents a feature set, where a 1 at the f^th position 
-             means the f^th feature has been selected and a 0 means it has not been selected. 
-           - alpha is an optional argument corresponding to the level of significance of the null 
-             hypothesis test (default is 0.05)
+
+    Args:
+        Z1 & Z2 (np.ndarray)
+            Two BINARY matrices Z1 and Z2 (given as lists or as numpy.ndarray objects of size M*d).
+            Each row of the binary matrix represents a feature set, where a 1 at the f^th position
+            means the f^th feature has been selected and a 0 means it has not been selected.
+        alpha (float, Optional)
+            alpha is an optional argument corresponding to the level of significance of the null
+            hypothesis test (default is 0.05)
            
-    OUTPUT: A dictionnary with:
-            - a boolean value for key 'reject' equal to True if the null hypothesis is rejected and to False otherwise
-            - a float for the key 'T' giving the value of the test statistic 
-            - a float giving for the key 'p-value' giving the p-value of the hypothesis test
+    Returns:
+         (dict)
+            A dictionnary with:
+            * a boolean value for key 'reject' equal to True if the null hypothesis is rejected and to False otherwise
+            * a float for the key 'T' giving the value of the test statistic
+            * a float giving for the key 'p-value' giving the p-value of the hypothesis test
     '''
     Z1=checkInputType(Z1) # check the input Z1 is of the right type
     Z2=checkInputType(Z2) # check the input Z2 is of the right type
