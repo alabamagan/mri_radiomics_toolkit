@@ -17,7 +17,7 @@ from typing import Optional, Any, Iterable
 import math
 
 __all__ = ['getStability', 'getVarianceofStability', 'confidenceIntervals', 'hypothesisTestT', 'hypothesisTestV',
-           'feat_list_to_binary_mat']
+           'feat_list_to_binary_mat', 'jaccard_mean']
 
 def getStability(Z: np.ndarray) -> float:
     r''' 
@@ -130,7 +130,7 @@ def hypothesisTestV(Z: np.ndarray,
             * a boolean value for key 'reject' equal to True if the null hypothesis is rejected and to False otherwise
             * a float for the key 'V' giving the value of the test statistic
             * a float giving for the key 'p-value' giving the p-value of the hypothesis test
-    '''
+    ''' # noqa
     Z=checkInputType(Z) # check the input Z is of the right type
     res=getVarianceofStability(Z)
     V=(res['stability']-stab0)/math.sqrt(res['variance'])
@@ -164,7 +164,7 @@ def hypothesisTestT(Z1: np.ndarray,
             * a boolean value for key 'reject' equal to True if the null hypothesis is rejected and to False otherwise
             * a float for the key 'T' giving the value of the test statistic
             * a float giving for the key 'p-value' giving the p-value of the hypothesis test
-    '''
+    ''' # noqa
     Z1=checkInputType(Z1) # check the input Z1 is of the right type
     Z2=checkInputType(Z2) # check the input Z2 is of the right type
     res1=getVarianceofStability(Z1)
@@ -203,6 +203,9 @@ def checkInputType(Z):
 
 #=== My Code ===
 import pandas as pd
+import itertools
+import multiprocessing as mpi
+from sklearn.metrics import jaccard_score
 
 def feat_list_to_binary_mat(selected_feat_list: pd.DataFrame,
                             full_feat_list: Iterable[Any]) -> np.ndarray:
@@ -239,3 +242,25 @@ def feat_list_to_binary_mat(selected_feat_list: pd.DataFrame,
         for j in index:
             Z[i, j] = True
     return Z
+
+def jaccard_mean(Z: np.ndarray):
+    r"""
+    
+    Args:
+        Z (np.ndarray):
+            Each row of the binary matrix represents a feature set, where a 1 at the f^th position
+            means the f^th feature has been selected and a 0 means it has not been selected. 
+
+    Returns:
+        (float) - Mean of the pair-wise jaccard index
+    """ # noqa
+
+    jac_job = [(Z[i], Z[j]) for i, j in itertools.product(range(len(Z)), range(len(Z))) if i != j]
+
+    pool = mpi.Pool()
+    res = pool.starmap_async(jaccard_score, jac_job)
+    pool.close()
+    pool.join()
+    jac = res.get()
+    jac_bar = np.mean(jac)
+    return jac_bar
