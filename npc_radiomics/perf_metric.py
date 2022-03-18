@@ -263,4 +263,5 @@ def jaccard_mean(Z: np.ndarray):
     pool.join()
     jac = res.get()
     jac_bar = np.mean(jac)
-    return jac_bar
+    jac_bar_sd = np.std(jac)
+    return jac_bar, jac_bar_sd
