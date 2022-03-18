@@ -68,13 +68,15 @@ def compute_ICC(featset_A: pd.DataFrame,
     .. note::
         * This function requires that the first three columns are `pd.MultiIndex`. The name of the headers should be
           exactly "Pre-processing", "Feature_Group" and "Feature_Name".
-        * This function takes only ICC1 from the pacakge `pingouin`.
+        * This function takes one of the six ICC forms of the package `pingouin`.
 
     Args:
         featset_A (pd.DataFrame):
             Dataframe that contains features computed and to be compared with the other set `featset_B`.
         featset_B (pd.DataFrame):
             Dataframe that should have the exact same row indices as `featset_A`.
+        ICC_form (str, Optional):
+            One of the six forms in ["ICC1"|"ICC2"|"ICC3"|"ICC1k"|"ICC2k"|"ICC3k"]. Default to be "ICC2k".
 
     Returns:
         pd.DataFrame
@@ -145,12 +147,13 @@ def compute_ICC(featset_A: pd.DataFrame,
 
 def ICC_thres_filter(featset_A: pd.DataFrame,
                      featset_B: pd.DataFrame,
-                     ICC_threshold: Optional[float] = 0.9) -> pd.DataFrame:
+                     ICC_threshold: Optional[float] = 0.9,
+                     ICC_form: Optional[str] = 'ICC2k') -> pd.DataFrame:
     r"""
     Wrapper function for convinience
     `featset_A/B` columns should be patient identifiers, and rows should be features.
     """
-    ICCs = compute_ICC(featset_A, featset_B)[0]
+    ICCs = compute_ICC(featset_A, featset_B, ICC_form=ICC_form)[0]
     ICCs = ICCs.loc[ICCs['ICC'] >= 0.9].index
     return ICCs
 
@@ -212,6 +215,7 @@ def T_test_filter(features: pd.DataFrame,
 def preliminary_feature_filtering(features_a: pd.DataFrame,
                                   features_b: pd.DataFrame,
                                   targets: pd.DataFrame,
+                                  ICC_form: Optional[str] = 'ICC2k'
                                   ):
     r"""
     Perform feature selction following the steps:
@@ -233,7 +237,7 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
         targets:
 
     Returns:
-
+        Tuple of filtered features_a and features_b
     """
     logger = MNTSLogger['preliminary_feature_filtering']
 
@@ -258,7 +262,8 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
     # Filter features by ICC
     logger.info("Dropping features by their intra-observer segmentation ICC")
     _icc90_feats = ICC_thres_filter(features_a.loc[mutual_features],
-                                    features_b.loc[mutual_features], 0.9)
+                                    features_b.loc[mutual_features], 0.9,
+                                    ICC_form=ICC_form)
 
     # Compute p-values of features
     icc90_feats_a = features_a.loc[_icc90_feats]
@@ -330,6 +335,8 @@ def supervised_features_selection(features: pd.DataFrame,
     # Align targets and features, assume target.index $\in$ features.columns
     if not targets.index.to_list() == features.columns.to_list():
         logger.warning("Discrepancy found in case identifiers in target and features, trying to align them!")
+        logger.debug(f"Target: {','.join(targets.index.to_list())}")
+        logger.debug(f"features: {','.join(features.columns.to_list())}")
         _targets = targets.loc[features.columns]
     else:
         _targets = targets
@@ -421,7 +428,8 @@ def features_selection(features_a: pd.DataFrame,
                        features_b: pd.DataFrame = None,
                        n_trials=500,
                        criteria_threshold=(0.9, 0.5, 0.99),
-                       boosting: bool = True):
+                       boosting: bool = True,
+                       ICC_form: Optional[str] = 'ICC2k'):
     r"""
     Features selection wrapper function, execute:
     1. initial feature filtering `preliminary_feature_filtering`
@@ -442,7 +450,7 @@ def features_selection(features_a: pd.DataFrame,
 
     # Initial feature filtering using quantitative methods
     if features_b is not None:
-        feats_a, feats_b = preliminary_feature_filtering(features_a, features_b, targets)
+        feats_a, feats_b = preliminary_feature_filtering(features_a, features_b, targets, ICC_form='ICC2k')
     else:
         # Just do variance filter and rop the useless columns
         var_filter = feature_selection.VarianceThreshold(threshold=.95*(1-.95))
@@ -481,14 +489,15 @@ def features_selection(features_a: pd.DataFrame,
 
 def bootstrapped_features_selection(features_a: pd.DataFrame,
                                     targets: pd.DataFrame,
-                                    features_b: pd.DataFrame = None,
-                                    criteria_threshold=(0.9, 0.5, 0.99),
-                                    n_trials: int = 500,
-                                    boot_runs: int = 250,
-                                    boot_ratio: Iterable[float] = (0.8, 1.0),
-                                    thres_percentage: float = 0.4,
-                                    return_freq: bool = False,
-                                    boosting: bool = True) -> List[pd.DataFrame]:
+                                    features_b: Optional[pd.DataFrame] = None,
+                                    criteria_threshold: Optional[Iterable[float]] =(0.9, 0.5, 0.99),
+                                    n_trials: Optional[int] = 500,
+                                    boot_runs: Optional[int] = 250,
+                                    boot_ratio: Optional[Iterable[float]] = (0.8, 1.0),
+                                    thres_percentage: Optional[float] = 0.4,
+                                    return_freq: Optional[bool] = False,
+                                    boosting: Optional[bool] = True,
+                                    ICC_form: Optional[str] = 'ICC2k') -> List[pd.DataFrame]:
     r"""
     Use either bootstrapping to further improve selection stability
 
@@ -514,24 +523,27 @@ def bootstrapped_features_selection(features_a: pd.DataFrame,
         train_xb = features_b.T.loc[train_y.index].T if not features_b is None else None
 
         features = features_selection(train_xa, train_y, train_xb, n_trials=n_trials,
-                                      criteria_threshold=criteria_threshold, boosting=boosting)
+                                      criteria_threshold=criteria_threshold, boosting=boosting, ICC_form=ICC_form)
         features_names = ['__'.join(i) for i in features.index]
         features_list.append(features_names)
         features_dict[i] = features_names
         logger.info(f"=== Done {i} ===")
 
     # Return features with more than certain percentage of appearance
-    # Count features frequencies
-    if boot_runs > 0:
-        all_features = set.union(*[set(i) for i in features_list])
-        features_frequencies = [
-            pd.Series({features_name_map[a]: features_dict[i].count(a) for a in features_dict[i]}, name=f'run_{i:02d}')
-            for i in range(boot_runs)]
-        features_frequencies = pd.concat(features_frequencies, axis=1).fillna(0)
-        features_frequencies['Sum'] = features_frequencies.sum(axis=1)
-        features_frequencies['Rate'] = features_frequencies['Sum'] / float(boot_runs)
+    # Set thres to 0 if bo bootstrapping (bagging), i.e. all feature selected will be included
+    if boot_runs == 1:
+        thres_percentage = 0
 
-        selected_features = features_frequencies[features_frequencies['Rate'] > thres_percentage].index
+    # Count features frequencies
+    all_features = set.union(*[set(i) for i in features_list])
+    features_frequencies = [
+        pd.Series({features_name_map[a]: features_dict[i].count(a) for a in features_dict[i]}, name=f'run_{i:02d}')
+        for i in range(boot_runs)]
+    features_frequencies = pd.concat(features_frequencies, axis=1).fillna(0)
+    features_frequencies['Sum'] = features_frequencies.sum(axis=1)
+    features_frequencies['Rate'] = features_frequencies['Sum'] / float(boot_runs)
+
+    selected_features = features_frequencies[features_frequencies['Rate'] > thres_percentage].index
 
     if return_freq:
         return features_frequencies, selected_features
@@ -540,6 +552,8 @@ def bootstrapped_features_selection(features_a: pd.DataFrame,
 
 class FeatureSelector(object):
     r"""
+    This class is used for feature selection.
+
     Args:
         criteria_threshold ([int, int, int], Optional):
             Corresponding to the three threshold described in Anna et al. [1], default to (0.9, 0.5, 0.99)
@@ -557,8 +571,13 @@ class FeatureSelector(object):
             If True, `fit` will return the frequency of selection of each feature across the bootsrapped runs.
         boosting (bool, Optional):
             If True, BRENT is used, otherwise RENT is used. Default to True.
+        ICC_form (str, Optional):
+            One of the six forms in ["ICC1"|"ICC2"|"ICC3"|"ICC1k"|"ICC2k"|"ICC3k"]. Default to be "ICC2k". See also
+            :func:`computeICC`
+
     """
     def __init__(self,
+                 *, # not used
                  criteria_threshold: Optional[Sequence[int]] = (0.9, 0.5, 0.99),
                  n_trials:           Optional[int] = 500,
                  boot_runs:          Optional[int] = 250,
@@ -566,6 +585,8 @@ class FeatureSelector(object):
                  thres_percentage:   Optional[float] = 0.4,
                  return_freq:        Optional[bool] = False,
                  boosting:           Optional[bool] = True,
+                 ICC_form:           Optional[str]  = 'ICC2k',
+                 **kwargs # not used
                  ):
         super(FeatureSelector, self).__init__()
         self.logger = MNTSLogger[__class__.__name__]
@@ -578,7 +599,8 @@ class FeatureSelector(object):
             'boot_ratio': boot_ratio,
             'thres_percentage': thres_percentage,
             'return_freq': return_freq,
-            'boosting': boosting
+            'boosting': boosting,
+            'ICC_form': ICC_form
         }
         self.saved_state = {
             'selected_features': None,
@@ -592,7 +614,7 @@ class FeatureSelector(object):
 
     @selected_features.setter
     def selected_features(self, v):
-        raise ArithmeticError("Selected features should not be manually asigned.")
+        raise ArithmeticError("Selected features should not be manually assigned.")
 
     @property
     def setting(self):
@@ -641,7 +663,8 @@ class FeatureSelector(object):
                                                 boot_ratio=self.setting['boot_ratio'],
                                                 thres_percentage=self.setting['thres_percentage'],
                                                 return_freq=True,
-                                                boosting=self.setting['boosting'])
+                                                boosting=self.setting['boosting'],
+                                                ICC_form=self.setting['ICC_form'])
         self.logger.info(f"Selected {len(feats[1])} features: {feats[1]}")
 
         self.saved_state['selected_features'] = feats[1]
