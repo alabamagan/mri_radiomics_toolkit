@@ -5,6 +5,7 @@ from pathlib import Path
 from mnts.scripts.normalization import *
 from mnts.mnts_logger import MNTSLogger
 
+import joblib
 import yaml
 import pprint
 import pandas as pd
@@ -168,10 +169,37 @@ class Controller(object):
         self.saved_state['predict_ready'] = True
         return 0
 
+    def fit_df(self,
+               df_a: pd.DataFrame,
+               gt_df: pd.DataFrame,
+               df_b: Optional[pd.DataFrame] = None):
+        r"""
+        This is a direct port of `selector.fit()`, and then `model_builder.fit()` The features should have the patients
+        as rows and feature as columns. In other words, this function skips the extraction step.
+        """
+        if self.extractor.param_file is None:
+            raise AttributeError("Please set the pyradiomics parameter file first.")
+
+        overlap_index = set(df_a.index) & set(gt_df.index)
+        if df_b is not None:
+            overlap_index = overlap_index & set(df_b.index)
+            df_b = df_b.loc[overlap_index]
+
+        self._logger.debug(f"df_a:\n {df_a.to_string()}")
+        self._logger.debug(f"gt_df:\n {gt_df.to_string()}")
+        feats_a, feats_b = self.selector.fit(df_a.loc[overlap_index],
+                                             gt_df.loc[overlap_index],
+                                             X_b=df_b)
+
+        results, predict_table = self.model_builder.fit(feats_a, gt_df)
+        self.saved_state['predict_ready'] = True
+        return 0
+
+
     def predict(self,
                 img_path: Path,
                 seg_path: Path,
-                with_normalization: Optional[bool] = False):
+                with_normalization: Optional[bool] = False) -> pd.DataFrame:
         if with_normalization is not None:
             self._with_norm = bool(with_normalization)
         df = self.extract_feature(img_path, seg_path=seg_path)
@@ -181,12 +209,14 @@ class Controller(object):
                    img_feat: pd.DataFrame):
         return self.model_builder.predict(df)
 
-    def save(self, f):
+    def save(self, f: Path) -> int:
         if any([v is None for v in self.saved_state.values()]):
             raise ArithmeticError("There are nothing to save.")
+        f = Path(f)
         joblib.dump(self.saved_state, filename=f.with_suffix('.ctl'))
+        return 0
 
-    def load(self, f: Path):
+    def load(self, f: Path) -> None:
         r"""
         Load att `self.saved_state`. The file saved should be a dictionary containing key 'selected_features', which
         points to a list of features in the format of pd.MultiIndex or tuple
@@ -201,3 +231,16 @@ class Controller(object):
         #TODO: write checks for each of the modules and make sure all are ready for inference.
         # note that for FE `with_norm` more checks are needed.
         self.saved_state['predict_ready'] = True
+
+    @property
+    def selected_features(self):
+        if not self.saved_state['predict_ready']:
+            self._logger.error("Features was not selected yet! Call fit() or load() first!")
+            return None
+        else:
+            return self.selector.selected_features
+
+    @selected_features.setter
+    def selected_features(self, v):
+        raise ArithmeticError("Selected features should not be manually assigned.")
+
