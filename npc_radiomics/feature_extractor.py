@@ -207,7 +207,7 @@ class FeatureExtractor(object):
         >>> fe = FeatureExtractor()
 
     """
-    def __init__(self, id_globber = "^[0-9a-zA-Z]+", param_file=None):
+    def __init__(self, *, id_globber = "^[0-9a-zA-Z]+", param_file=None, **kwargs):
         super(FeatureExtractor, self).__init__()
         self.saved_state = {
             'param_file': None, # Path to param file
