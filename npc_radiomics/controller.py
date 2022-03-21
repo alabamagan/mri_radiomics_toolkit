@@ -9,6 +9,7 @@ import joblib
 import yaml
 import pprint
 import pandas as pd
+from io import BytesIO
 
 __all__ = ['Controller']
 
@@ -70,6 +71,7 @@ class Controller(object):
                 return_freq
                 boosting
         """
+        f = Path(f)
         with f.open('r') as stream:
             self._logger.info(f"Reading from file: {str(f)}")
             data_loaded = yaml.safe_load(stream)
@@ -213,7 +215,17 @@ class Controller(object):
         if any([v is None for v in self.saved_state.values()]):
             raise ArithmeticError("There are nothing to save.")
         f = Path(f)
+        _logger_store = {}
+        for key in ['selector', 'extractor', 'model']:
+            # temporally remove loggers because it will block joblib.dump from working properly
+            _logger_store[key] = self.saved_state[key]._logger
+            self.saved_state[key]._logger = None
+
         joblib.dump(self.saved_state, filename=f.with_suffix('.ctl'))
+        # Return the logger
+        for key in ['selector', 'extractor', 'model']:
+            self.saved_state[key]._logger = _logger_store[key]
+        del _logger_store # Manually delete the reference to ensure it will release memory after running
         return 0
 
     def load(self, f: Path) -> None:
@@ -226,10 +238,14 @@ class Controller(object):
         if not isinstance(d, dict):
             raise TypeError("State loaded is incorrect!")
         self.saved_state.update(d)
-        self.read_setting(self.saved_state['setting'])
+        self.read_setting(Path(self.saved_state['setting']))
 
         #TODO: write checks for each of the modules and make sure all are ready for inference.
         # note that for FE `with_norm` more checks are needed.
+
+        # Set up loggers
+        for key in ['selector', 'extractor', 'model']:
+            self.saved_state[key]._logger = MNTSLogger[type(self.saved_state[key]).__name__]
         self.saved_state['predict_ready'] = True
 
     @property
