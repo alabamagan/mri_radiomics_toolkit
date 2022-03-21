@@ -207,7 +207,7 @@ class ModelBuilder(object):
             'best_params': None
         }
         self.verbose = verbose
-        self.logger = MNTSLogger[__class__.__name__]
+        self._logger = MNTSLogger[__class__.__name__]
 
     def load(self, f: Path):
         r"""
@@ -232,10 +232,10 @@ class ModelBuilder(object):
             test_targets: pd.DataFrame = None) -> Tuple[pd.DataFrame]:
         if not self.check_dimension(train_features, train_targets):
             # Try to match dimensions for convenience
-            self.logger.warning("Miss-match found for train data.")
+            self._logger.warning("Miss-match found for train data.")
             train_features, train_targets = self.match_dimension(train_features, train_targets)
         if not (test_features is None or test_targets is None):
-            self.logger.warning("Miss-match found for test data.")
+            self._logger.warning("Miss-match found for test data.")
             test_features, test_targets = self.match_dimension(test_features, test_targets)
 
         best_params, results, predict_table, best_estimators = cv_grid_search(train_features,
@@ -270,7 +270,7 @@ class ModelBuilder(object):
         Rows of X must match length of y.
         """
         if not len(X) == len(y):
-            self.logger.warning(f"Warning shape of X ({X.shape}) and y ({y.shape}) mis-match! ")
+            self._logger.warning(f"Warning shape of X ({X.shape}) and y ({y.shape}) mis-match! ")
             return False
         else:
             return True
@@ -284,8 +284,8 @@ class ModelBuilder(object):
         missing_targ = set(y.index.astype(str)) - overlap
         if len(missing_feat) > 0:
             msg = ','.join(missing_feat)
-            self.logger.info(f"Rows removed from features: {msg}")
+            self._logger.info(f"Rows removed from features: {msg}")
         if len(missing_targ) > 0:
             msg = ','.join(missing_targ)
-            self.logger.info(f"Rows removed from targets: {msg}")
+            self._logger.info(f"Rows removed from targets: {msg}")
         return X.loc[overlap], y.loc[overlap]
