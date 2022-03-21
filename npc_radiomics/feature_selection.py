@@ -20,7 +20,6 @@ from RENT import RENT, stability
 from typing import Optional
 
 import joblib
-global logger
 
 __all__ = ['FeatureSelector', 'supervised_features_selection', 'preliminary_feature_filtering']
 
@@ -589,7 +588,7 @@ class FeatureSelector(object):
                  **kwargs # not used
                  ):
         super(FeatureSelector, self).__init__()
-        self.logger = MNTSLogger[__class__.__name__]
+        self._logger = MNTSLogger[__class__.__name__]
 
         # These are controlled by yaml loaded by the controller.
         setting = {
@@ -665,7 +664,7 @@ class FeatureSelector(object):
                                                 return_freq=True,
                                                 boosting=self.setting['boosting'],
                                                 ICC_form=self.setting['ICC_form'])
-        self.logger.info(f"Selected {len(feats[1])} features: {feats[1]}")
+        self._logger.info(f"Selected {len(feats[1])} features: {feats[1]}")
 
         self.saved_state['selected_features'] = feats[1]
         self.saved_state['feat_freq'] = feats[0]
