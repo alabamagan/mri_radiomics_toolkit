@@ -36,25 +36,38 @@ class Controller(object):
                  **kwargs):
         super(Controller, self).__init__()
 
-        self.extractor = FeatureExtractor(*args, **kwargs)
-        self.selector = FeatureSelector(*args, **kwargs)
-        self.model_builder = ModelBuilder(*args, **kwargs)
         self._receved_params = kwargs
         self._logger = MNTSLogger[__class__.__name__]
         self._with_norm = with_norm
         self._setting = setting
 
         self.saved_state = {
-            'extractor': self.extractor,
-            'selector': self.selector,
-            'model': self.model_builder,
+            'extractor': None,
+            'selector': None,
+            'model': None,
             'setting': self._setting,
             'norm_ready': False,
             'predict_ready': False,
         }
-
         if self._setting is not None:
             self.read_setting(Path(self._setting))
+
+        self.extractor = FeatureExtractor(*args, **kwargs)
+        self.selector = FeatureSelector(*args, **kwargs)
+        self.model_builder = ModelBuilder(*args, **kwargs)
+
+    @property
+    def extractor(self):
+        return self.saved_state['extractor']
+
+    @property
+    def selector(self):
+        return self.saved_state['selector']
+
+    @property
+    def model_builder(self):
+        return self.saved_state['model']
+
 
     def read_setting(self, f: Path) -> dict:
         r"""
