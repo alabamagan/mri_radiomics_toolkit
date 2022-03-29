@@ -269,9 +269,20 @@ class FeatureExtractor(object):
             raise ArithmeticError("Please specify param file.")
         if param_file is None:
             param_file = self.saved_state['param_file']
-        df = get_radiomics_features_from_folder(im_path, seg_path, param_file, *args, id_globber=self.id_globber,
-                                                augmentor=augmentor)
-        self.saved_state['param_file'] = param_file
+
+        # if param_file is not Path and a string, write contents to tempfile
+        try:
+            if Path(param_file).is_file():
+                self.param_file = param_file # this will read param file to str and store it in saved_state
+        except OSError: # Prevent returning file name too long error
+            pass
+
+        with tempfile.NamedTemporaryFile('w', suffix='.yml') as tmp_param_file:
+            tmp_param_file.write(self.param_file)
+            tmp_param_file.flush()
+            df = get_radiomics_features_from_folder(im_path, seg_path, Path(tmp_param_file.name), *args, id_globber=self.id_globber,
+                                            augmentor=augmentor)
+
         self._extracted_features = df.T
         if self._extracted_features.index.nlevels > 1:
             self._extracted_features.sort_index(level=0, inplace=True)

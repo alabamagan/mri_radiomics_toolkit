@@ -76,7 +76,8 @@ class Test_pipeline(unittest.TestCase):
             logger.info("{:-^50s}".format(" Testing load state "))
             _fe = FeatureExtractor(id_globber=globber)
             _fe.load(Path(f).joinpath('saved_state.fe'))
-            _df = fe.extract_features(p_im, p_seg, param_file=p_setting)
+            logger.debug(f"Loaded state: {_fe.saved_state}")
+            _df = fe.extract_features(p_im, p_seg)
 
             # Display tested itmes
             logger.info(f"Left:\n {_df.to_string()}")
@@ -126,6 +127,7 @@ class Test_pipeline(unittest.TestCase):
             fe.param_file = p_setting
 
             logger.info(f"Processed setting: {fe.param_file}")
+            logger.info(f"Saved state: {pprint.pformat(fe.saved_state)}")
             self.assertFalse(fe.param_file == p_setting)
             self.assertTrue(fe.param_file == p_setting.read_text())
 
