@@ -42,9 +42,9 @@ class Controller(object):
         self._setting = setting
 
         self.saved_state = {
-            'extractor': None,
-            'selector': None,
-            'model': None,
+            'extractor': FeatureExtractor(*args, **kwargs),
+            'selector': FeatureSelector(*args, **kwargs),
+            'model': ModelBuilder(*args, **kwargs),
             'setting': self._setting,
             'norm_ready': False,
             'predict_ready': False,
@@ -52,22 +52,29 @@ class Controller(object):
         if self._setting is not None:
             self.read_setting(Path(self._setting))
 
-        self.extractor = FeatureExtractor(*args, **kwargs)
-        self.selector = FeatureSelector(*args, **kwargs)
-        self.model_builder = ModelBuilder(*args, **kwargs)
-
     @property
     def extractor(self):
         return self.saved_state['extractor']
+
+    @extractor.setter
+    def extractor(self, val):
+        self.saved_state['extractor'] = val
 
     @property
     def selector(self):
         return self.saved_state['selector']
 
+    @selector.setter
+    def selector(self, val):
+        self.saved_state['selector'] = val
+
     @property
     def model_builder(self):
         return self.saved_state['model']
 
+    @model_builder.setter
+    def model_builder(self, val):
+        self.saved_state['model'] = val
 
     def read_setting(self, f: Path) -> dict:
         r"""
