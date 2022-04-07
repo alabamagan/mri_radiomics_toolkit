@@ -5,7 +5,7 @@ import tempfile
 import zipfile
 import pprint
 from pathlib import Path
-from typing import Optional, Union, Sequence
+from typing import Optional, Union, Sequence, Iterable
 from zipfile import ZipFile, ZIP_DEFLATED
 from io import BytesIO
 from functools import partial
@@ -77,11 +77,11 @@ def get_radiomics_features(fn: Path,
         logger = MNTSLogger['radiomics_features']
         im = sitk.ReadImage(str(fn))
         msk = sitk.ReadImage(str(mn))
-        if args is not None:
+        if len(args) > 0:
             logger.info(f"Get multiple segmentations, got {1 + len(args)}")
             msk = [msk] + [sitk.ReadImage(str(a)) for a in args]
         else:
-            more_mask = [msk]
+            msk = [msk]
         # check if they have same spacing
         for i, _msk in enumerate(msk):
             if not all(np.isclose(im.GetSpacing(), _msk.GetSpacing(), atol=1E-4)):
@@ -134,6 +134,7 @@ def get_radiomics_features_from_folder(im_dir: Path,
                                        param_file: Path,
                                        *args,
                                        id_globber: str = "^[0-9a-zA-Z]+",
+                                       idlist: Iterable[str] = None,
                                        augmentor: tio.Compose = None) -> pd.DataFrame:
     r"""
     This pairs up the image and the segmentation files using the global regex globber
@@ -145,6 +146,8 @@ def get_radiomics_features_from_folder(im_dir: Path,
             Folder that contains the segmentation files
         param_file (Path):
             Path to the pyradiomics setting.
+        idlist (list):
+
         *args:
             If this exist, arguments will be attached to `mask_dir`, additional features will be extracted
             if there are more than one masks
@@ -152,7 +155,17 @@ def get_radiomics_features_from_folder(im_dir: Path,
     Return:
         pd.DataFrame
     """
+    logger = MNTSLogger['radiomics_features']
     ids = get_unique_IDs(list([str(i.name) for i in im_dir.iterdir()]), id_globber)
+    if not idlist is None:
+        overlap = set.intersection(set(ids), set(idlist))
+        missing_idlist = set(idlist) - set(ids)
+        missing_files = set(ids) - set(idlist)
+        if len(missing_idlist):
+            logger.warning(f"Some of the specified ids cannot be founded: \n {missing_idlist}")
+        if len(missing_files):
+            logger.info(f"IDs filtered away: {missing_files}")
+        ids = overlap
 
     # Load the pairs
     if not args is None:
@@ -207,13 +220,14 @@ class FeatureExtractor(object):
         >>> fe = FeatureExtractor()
 
     """
-    def __init__(self, *, id_globber = "^[0-9a-zA-Z]+", param_file=None, **kwargs):
+    def __init__(self, *, id_globber = "^[0-9a-zA-Z]+", idlist = None, param_file = None, **kwargs):
         super(FeatureExtractor, self).__init__()
         self.saved_state = {
             'param_file': None, # Path to param file
             'norm_state_file': Path('../assets/t2wfs/'),    # Override in `extract_features_with_norm` if specified
             'norm_graph': None,
         }
+        self.idlist = idlist
         self.param_file = param_file
         self.id_globber = id_globber
         self._extracted_features = None
@@ -262,13 +276,17 @@ class FeatureExtractor(object):
     def extract_features(self,
                          im_path: Path,
                          seg_path: Path,
-                          *args,
+                         *args,
+                         id_globber: Optional[str] = "^[0-9a-zA-Z]+",
+                         idlist: Optional[Iterable[str]] = None,
                          param_file: Optional[Path] = None,
                          augmentor: Optional[Union[tio.Compose, Path]] = None) -> pd.DataFrame:
         if param_file is None and self.saved_state['param_file'] is None:
             raise ArithmeticError("Please specify param file.")
         if param_file is None:
             param_file = self.saved_state['param_file']
+        if idlist is None:
+            idlist = self.idlist
 
         # if param_file is not Path and a string, write contents to tempfile
         try:
@@ -280,8 +298,9 @@ class FeatureExtractor(object):
         with tempfile.NamedTemporaryFile('w', suffix='.yml') as tmp_param_file:
             tmp_param_file.write(self.param_file)
             tmp_param_file.flush()
-            df = get_radiomics_features_from_folder(im_path, seg_path, Path(tmp_param_file.name), *args, id_globber=self.id_globber,
-                                            augmentor=augmentor)
+            df = get_radiomics_features_from_folder(im_path, seg_path, Path(tmp_param_file.name), *args,
+                                                    id_globber=self.id_globber,
+                                                    augmentor=augmentor, idlist=idlist)
 
         self._extracted_features = df.T
         if self._extracted_features.index.nlevels > 1:
@@ -306,12 +325,18 @@ class FeatureExtractor(object):
                 `self.saved_state['param_file']` option.
 
         """
-        with tempfile.NamedTemporaryFile('w', suffix='.yaml') as f, \
-             tempfile.TemporaryDirectory() as temp_dir_im, \
-             tempfile.TemporaryDirectory() as temp_dir_seg:
-            if args is not None:
-                self._logger.warning("The function extract_features_with_norm() does not support multiple segmentation "
-                                     "yet!")
+        #TODO: make this work for multiple segmentations
+        with tempfile.TemporaryDirectory() as temp_root_dir:
+            f = tempfile.NamedTemporaryFile('w', suffix='.yaml', dir=temp_root_dir)
+            temp_dir_im = tempfile.TemporaryDirectory(prefix=temp_root_dir + os.sep).name
+            temp_dir_seg = [tempfile.TemporaryDirectory(prefix=temp_root_dir + os.sep).name for i in range(1 + len(args))]
+            if args is not None and len(args) > 0:
+                # self._logger.warning("The function extract_features_with_norm() does not support multiple segmentation "
+                #                      "yet! Ignoring additional segmentation input. ")
+                self._logger.info(f"Receive multiple segmentations: {len(args) + 1}")
+                seg_path = [seg_path] + args
+            else:
+                seg_path = [seg_path]
 
             self._logger.info(f"Created temp directory: ({temp_dir_im}, {temp_dir_seg})")
 
@@ -337,12 +362,14 @@ class FeatureExtractor(object):
             run_graph_inference(command)
 
             # normalize the segmentation for spatial transforms
-            command = f"--input {seg_path} --state-dir {str(norm_state)} --output {temp_dir_seg} --file {f.name} --verbose " \
-                      f"-n 12 --force-segment".split(' ')
-            self._logger.debug(f"Command for segment normalization: {command}")
-            run_graph_inference(command)
+            # For each segmentation input run once
+            for _seg_path, _temp_seg_out in zip(seg_path, temp_dir_seg):
+                command = f"--input {_seg_path} --state-dir {str(norm_state)} --output {str(_temp_seg_out)} --file {f.name} --verbose " \
+                          f"-n 12 --force-segment".split(' ')
+                self._logger.debug(f"Command for segment normalization: {command}")
+                run_graph_inference(command)
 
-            # Get the name of the last output nodes
+            # Get the name of the last output nodes !!! Only working on last output !!!
             ext_node_name = G.nodes[G._exits[-1]]['filter'].get_name()
 
             # run py radiomics
@@ -359,7 +386,8 @@ class FeatureExtractor(object):
                 _f.flush()
 
             df = self.extract_features(Path(temp_dir_im).joinpath(ext_node_name),
-                                       Path(temp_dir_seg).joinpath(ext_node_name),
+                                       Path(temp_dir_seg[0]).joinpath(ext_node_name),
+                                       *[Path(_p).joinpath(ext_node_name) for _p in temp_dir_seg[1:]],
                                        param_file=param_file)
 
             # Cleanup

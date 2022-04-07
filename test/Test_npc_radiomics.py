@@ -58,7 +58,7 @@ class Test_pipeline(unittest.TestCase):
         with tempfile.TemporaryDirectory() as f:
             # Create feature extractor
             logger.info("{:-^50s}".format(" Testing feature extraction "))
-            fe = FeatureExtractor(id_globber=globber)
+            fe = FeatureExtractor(id_globber=globber, idlist=['1130', '1131'])
             fe.param_file = p_setting
             df = fe.extract_features(p_im, p_seg, param_file=p_setting)
             fe.save_features(p_setting.with_name('sample_features.xlsx'))
@@ -304,7 +304,7 @@ class Test_pipeline(unittest.TestCase):
                 logger.warning("Fitting with testing data failed!")
             # Test model building without testing data
             try:
-                results, predict_table = model.fit(features.loc[train_feats], gt.loc[train_feats])
+                results, _ = model.fit(features.loc[train_feats], gt.loc[train_feats])
             except Exception as e:
                 logger.warning("Fitting without testing data failed!")
                 logger.exception(f"{e}")
@@ -318,7 +318,7 @@ class Test_pipeline(unittest.TestCase):
             # Test load functionality
             _model = ModelBuilder()
             _model.load(Path(f.name))
-            logger.info(f"Estimator: {pprint.pformat(_model.saved_state)}")
+            logger.debug(f"Saved state: {pprint.pformat(_model.saved_state)}")
             _predict_table = _model.predict(features.loc[test_feats])
 
             logger.info(f"Left:\n {_predict_table}")
@@ -373,10 +373,16 @@ class Test_pipeline(unittest.TestCase):
         p_fe_state = Path('../samples/fe_saved_state.fe')
 
         # extract feature was ported to the controller, test it
-        with MNTSLogger('./default.log', verbose=True, keep_file=True, log_level='debug') as logger:
+        with MNTSLogger('./default.log', verbose=True, keep_file=True, log_level='debug') as logger, \
+           tempfile.NamedTemporaryFile('wb', suffix='.ctl') as f:
             ctl = Controller(setting=p, with_norm=True)
             ctl.load_norm_settings(fe_state=p_fe_state)
             ctl.fit(p_im, p_seg, p_gt)
+
+            ctl.save(f.name)
+            _ctl = Controller()
+            _ctl.load(f.name)
+            logger.info(f"Saved state: {_ctl.saved_state}")
 
     def test_stability_metric(self):
         from npc_radiomics.perf_metric import getStability, confidenceIntervals, hypothesisTestT, hypothesisTestV, feat_list_to_binary_mat
