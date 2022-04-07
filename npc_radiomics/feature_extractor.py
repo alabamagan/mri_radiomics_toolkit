@@ -325,7 +325,6 @@ class FeatureExtractor(object):
                 `self.saved_state['param_file']` option.
 
         """
-        #TODO: make this work for multiple segmentations
         with tempfile.TemporaryDirectory() as temp_root_dir:
             f = tempfile.NamedTemporaryFile('w', suffix='.yaml', dir=temp_root_dir)
             temp_dir_im = tempfile.TemporaryDirectory(prefix=temp_root_dir + os.sep).name
