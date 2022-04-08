@@ -126,7 +126,7 @@ def get_radiomics_features(fn: Path,
         return out
 
     except Exception as e:
-        MNTSLogger['radiomics_features'].error("Error during get_radiomics_features!")
+        MNTSLogger['radiomics_features'].error(f"Error during get_radiomics_features for image and mask {fn} and {mn}!")
         MNTSLogger['radiomics_features'].exception(e)
 
 def get_radiomics_features_from_folder(im_dir: Path,
