@@ -67,14 +67,14 @@ def cv_grid_search(train_features: pd.DataFrame,
     # Construct tests to perform
     param_grid_dict = {
         'Support Vector Machine': {
-            'classification': [svm.SVR(tol=1E-4, max_iter=3500)],
+            'classification': [svm.SVR(tol=1E-4, max_iter=-1)],
             'classification__kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
             'classification__C': [1, 10, 100, 1000],
             'classification__degree': [3, 5, 7, 9],
             'classification__epsilon': [1, 0.1, 0.01]
         },
         'Elastic Net': {
-            'classification': [linear_model.ElasticNet(tol=1E-4, max_iter=3500)],
+            'classification': [linear_model.ElasticNet(tol=1E-4, max_iter=5500)],
             'classification__alpha': [.02, .002],
             'classification__l1_ratio': [0.2, 0.5, 0.8]
         },
@@ -151,6 +151,7 @@ def model_building(train_features: pd.DataFrame,
         See :func:`cv_grid_search`
     """
 
+    #TODO: This function is not finished and require adding standard scalar here.
     logger = MNTSLogger['model-building']
     models = {
         'Logistic Regression': linear_model.LogisticRegression(penalty='elasticnet',
