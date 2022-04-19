@@ -3,9 +3,9 @@ Extractor:
   pyrad_param_file: "../assets/t2wfs/norm_graph.yml"
 
 Selector:
-  criteria_threshold: [0.9,0.9, 0.99]
-  n_trials: 10
-  boot_runs: 20
+  criteria_threshold: [0.5,0.5, 0.5]  # Low inclusion criteria to keep the example running fast
+  n_trials: 1
+  boot_runs: 1
   boot_ratio: [0.8, 1.0]
-  thres_percentage: 0.8
+  thres_percentage: 0.1
 

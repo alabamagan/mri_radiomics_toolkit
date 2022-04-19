@@ -7,7 +7,7 @@ imageType:
   LBP3D:
     lbp3DIcosphereRadius : 0.9
   LoG:
-    sigma: [0.4492, 0.4492, 0.4492]
+    sigma: [0.4492]
   Gradient: {}
   Exponential: {}
 
