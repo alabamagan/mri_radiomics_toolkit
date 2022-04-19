@@ -5,9 +5,6 @@ import matplotlib.pyplot as plt
 from mnts.mnts_logger import MNTSLogger
 import pandas as pd
 
-global logger
-
-
 def plot_performance_vs_hyperparams(clf,
                                     param_grid,
                                     features,

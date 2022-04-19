@@ -37,22 +37,31 @@ def main():
         features_a = features_a.loc[status.index]
         features_b = features_b.loc[status.index]
 
-        # controller
-        #--------------
-        controller = Controller(setting=str(p_ctl_setting), param_file=str(p_pyrad_setting))
-
-
         # K-fold options
         n_fold = 5
         splitter = model_selection.StratifiedKFold(n_splits=n_fold, shuffle=True)
         splits = splitter.split(status.index, status[status.columns[0]])
+
+        # # Load splits if exist
+        # p_existing_split = Path("../output/20220324/predict_tables.xlsx")
+        # if p_existing_split.is_file():
+        #     excel_file = pd.ExcelFile(p_existing_split)
+        #     excel_dfs = {i: pd.read_excel(excel_file, index_col=0, sheet_name=i) for i in excel_file.sheet_names}
+        #     all_ids = list(status.index)
+        #     splits = []
+        #     for i in excel_dfs:
+        #         logger.info(f"{i}")
+        #         test_index = [all_ids.index(case_id) for case_id in excel_dfs[i].index]
+        #         train_index = [all_ids.index(ti) for ti in all_ids if not ti in excel_dfs[i].index]
+        #         splits.append((train_index, test_index))
+        #         logger.info(f"{excel_dfs[i].index}")
 
         # Storage variables
         fold_freq = {}
         performance = []
         features_rate_table = []
         selected_features_list = []
-        output_root = Path('../output/_excluded_')
+        output_root = Path('../output/20220412(v2)')
         output_root.mkdir(exist_ok=True)
         summary_file = output_root.joinpath('output_summary.xlsx')
         excel_writter = pd.ExcelWriter(str(summary_file))
@@ -65,6 +74,9 @@ def main():
                                   [str(status.index[i]) for i in test_index]
             train_ids.sort()
             test_ids.sort()
+
+            # Create controller
+            controller = Controller(setting=str(p_ctl_setting), param_file=str(p_pyrad_setting))
 
             # Seperate traing and test features
             train_feat_a = features_a.loc[train_ids]

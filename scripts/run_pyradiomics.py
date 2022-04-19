@@ -15,7 +15,6 @@ import multiprocessing as mpi
 import argparse
 
 # Fix logger
-global logger
 global id_globber
 
 def main():

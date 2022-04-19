@@ -213,9 +213,9 @@ class Controller(object):
                                              gt_df.loc[overlap_index],
                                              X_b=df_b)
 
-        results, predict_table = self.model_builder.fit(feats_a, gt_df)
+        results, predict_table = self.model_builder.fit(feats_a, gt_df.loc[overlap_index])
         self.saved_state['predict_ready'] = True
-        return 0
+        return results, predict_table
 
 
     def predict(self,
@@ -229,7 +229,7 @@ class Controller(object):
 
     def predict_df(self,
                    img_feat: pd.DataFrame):
-        return self.model_builder.predict(df)
+        return self.model_builder.predict(self.selector.predict(img_feat))
 
     def save(self, f: Path) -> int:
         if any([v is None for v in self.saved_state.values()]):

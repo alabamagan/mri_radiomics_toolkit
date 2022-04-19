@@ -1,3 +1,14 @@
+r"""
+This file contains the experiments ran to evaluate the feature selection stability of various configuration.
+This study proposed to use boosting in combination with bagging to improve the algorithm RENT. The configurations
+used are as follow:
+  1. Ordinary elastic net
+  2. RENT
+  3. boosted RENT
+  4. bagged RENT
+  5. bagged-boosted RENT
+"""
+
 import torchio as tio
 import SimpleITK as sitk
 import time
@@ -16,23 +27,12 @@ from mnts.mnts_logger import MNTSLogger
 
 from tqdm import auto
 
-def build_augmentation() -> tio.Compose:
-    r"""This builds the augmentator"""
-
-    out = tio.Compose([
-        tio.ToCanonical(),
-        tio.RandomAffine(scales=[0.95, 1.05],
-                         degrees=10),
-        tio.RandomFlip(axes='lr'),
-        tio.RandomNoise(mean=0, std=[0, 1])
-    ])
-    return out
 
 def time_feature_selection():
     startitme = time.time()
     with MNTSLogger('./01_feature_selection_stability.log', keep_file=True, verbose=True, log_level='debug') as logger:
         logger.info("{:=^100s}".format(f" Testing time required for feature selection "))
-        p_setting = Path("01_configs/C3_BRENT.yml")
+        p_setting = Path("01_configs/C3_BBRENT.yml")
         p_feature_1 = Path("../samples/samples_feat_1st.xlsx")
         p_feature_2 = Path("../samples/samples_feat_2nd.xlsx")
         p_gt = Path("../samples/sample_datasheet.csv")
@@ -52,65 +52,13 @@ def time_feature_selection():
         time_used = (endtime - startitme)/60 # in minute
         logger.info("{:=^100s}".format(f" Time used {time_used:.02f}min ")) # 165 min on 212, 134 on A6000
 
-def time_augment_feature_extraction():
-    r"""
-    Estimate time required to extract features with augmentation
-    """
-    startitme = time.time()
-    with MNTSLogger('./01_feature_selection_stability.log', keep_file=True, verbose=True, log_level='debug') as logger:
-        logger.info("{:=^130s}".format(f" Testing time required for feature extract with augment "))
-
-        p_setting = Path("01_configs/C3_BRENT.yml")
-        p_pyrad_setting = Path('01_configs/pyrad_settings.yml')
-        p_img = Path('../NPC_Radiomics/10.Pre-processed-v2/01.NyulNormalized/')
-        p_seg_a = Path('../NPC_Radiomics/0B.Segmentation/01.First/')
-        p_seg_b = Path('../NPC_Radiomics/0B.Segmentation/02.Second/')
-
-        clt = Controller(setting=p_setting, with_norm=False)
-        df = clt.extractor.extract_features(p_img, p_seg_a, p_seg_b, param_file=p_pyrad_setting,
-                                            augmentor=build_augmentation())
-        df.to_excel('./output/time_augment_feature.xlsx')
-        logger.debug(f"Final output: {df.to_string}")
-        endtime = time.time()
-        time_used = (endtime - startitme)/60 # in minute
-        logger.info("{:=^130s}".format(f" Time used {time_used:.02f}min ")) # 24min on 212
-    pass
-
-def generate_augmented_features():
-    import gc
-    num_of_trials = 100
-    with MNTSLogger('./01_feature_selection_stability.log', keep_file=True, verbose=True, log_level='debug') as logger:
-        p_setting = Path("01_configs/C3_BRENT.yml")
-        p_pyrad_setting = Path('01_configs/pyrad_settings.yml')
-        logger.warning(f"Random_seed: {np.random.get_state()[1][0]}")
-        p_img = Path('../NPC_Radiomics/10.Pre-processed-v2/01.NyulNormalized/')
-        p_seg_a = Path('../NPC_Radiomics/0B.Segmentation/01.First/')
-        p_seg_b = Path('../NPC_Radiomics/0B.Segmentation/02.Second/')
-        for i in auto.trange(num_of_trials):
-            logger.warning(f"Random_seed loop {i}: {np.random.get_state()[1][0]}")
-            logger.info("{:-^130}".format(f" Trial {i:03d} "))
-            transform = build_augmentation()
-            ctl = Controller(setting=p_setting, with_norm=False)
-            df = ctl.extractor.extract_features(p_img, p_seg_a, p_seg_b, param_file=p_pyrad_setting,
-                                                augmentor=transform)
-            if df.index.nlevels > 1:
-                _ = df.index.levels[0].to_list()
-                df = [df.loc[key] for key in _]
-            else:
-                df = [df]
-
-            for j, dff in enumerate(df):
-                out_name = Path(f"./_exclude_output/trial-{i:03d}_feature-{chr(ord('A') + j)}.xlsx")
-                if not out_name.parent.is_dir():
-                    out_name.parent.mkdir(exist_ok=True)
-                logger.info(f"Saving to: {str(out_name)}")
-                dff.to_excel(str(out_name))
-            del df, ctl, transform
-            gc.collect()
-        pass
 
 def get_stability(selected_features: Union[Path, str],
-                  all_features: Union[Path, str]) -> float:
+                  all_features: Union[Path, str]) -> [np.ndarray, pd.Series]:
+    r"""
+    This function convert the features selected in each trial into a one-hot sparse matrix with rows as trials
+    and columns as features. The Nogeauria
+    """
     with MNTSLogger('./01_feature_selection_stability.py', keep_file=True, verbose=True, log_level='debug') as logger:
         selected_features = Path(selected_features)
         full_feat_list = Path(all_features)
@@ -126,7 +74,10 @@ def get_stability(selected_features: Union[Path, str],
 
         feats = [str(s) for s in feats.index.to_list()]
         Z = feat_list_to_binary_mat(sel, feats)
-        return getStability(Z)
+        nog_score = getStability(Z)
+        jac, jac_mean, jac_sd = jaccard_mean(Z)
+
+        return Z, jac, pd.Series([nog_score, jac_mean, jac_sd], index=['Nogueira', 'JAC Mean', 'JAC SD'])
 
 def validate_feature_selection_stability(clt_setting_path: Path,
                                          out_path: Path):
@@ -137,13 +88,6 @@ def validate_feature_selection_stability(clt_setting_path: Path,
         p_gt = Path("../samples/sample_datasheet.csv")
         p_out = Path(out_path)
         logger.info(f"Results are written to {str(p_out)}")
-
-        features_folder = Path('./output/')
-        features_excel_regexp = r".*trial-(?P<trial_number>\d+)_feature-(?P<feature_set_code>\w+).xlsx"
-
-        # Build a pd.Table from this
-        # map_dict = {re.search(features_excel_regexp, str(ff)).groups(): str(ff.resolve()) for ff in features_folder.iterdir()}
-        # df = pd.Series(map_dict, name='FileNames').to_frame()
 
         # for ids in df.index.levels[0].to_list():
         for ids in range(100):
@@ -169,7 +113,7 @@ def validate_feature_selection_stability(clt_setting_path: Path,
             df_feat_b = df_feat_b.loc[overlap_index]
             gt = gt.loc[overlap_index]
 
-            # Bootstrap (no replacement)
+            # Resample (no replacement)
             np.random.seed() # reset the random seed
             boot_index = sklearn.utils.resample(df_feat_a.index, replace=False, n_samples = int(0.7 * len(df_feat_a)))
             logger.info(f"bootstrapped index: {','.join(boot_index)}")
@@ -203,28 +147,72 @@ def validate_feature_selection_stability(clt_setting_path: Path,
                 pd.Series([str(i) for i in s],
                           name=f'Trial-{ids}').to_frame().to_excel(str(p_out))
 
+def feature_extraction():
+    with MNTSLogger('./01_feature_selection_stability.log', keep_file=True, verbose=True, log_level='debug') as logger:
+        p_im = Path("../NPC_Radiomics/10.Pre-processed-v2/01.NyulNormalized")
+        p_seg_A = Path("../NPC_Radiomics/0B.Segmentation/01.First/")
+        p_seg_B = Path("../NPC_Radiomics/0B.Segmentation/02.Second/")
+        p_setting = Path("../pyradiomics_setting/pyradiomics_setting-v3.yml")
+
+        extractor = FeatureExtractor(id_globber="^(NPC|T1rhoNPC|K|P|RHO)?[0-9]{2,4}")
+        df = extractor.extract_features(p_im, p_seg_A, p_seg_B, param_file=p_setting)
+        df['Segment_A'].to_excel("../NPC_Radiomics/10.Pre-processed-v2/features-v3repeat.xlsx")
+
 def stability_summary():
     with MNTSLogger('./01_feature_selection_stability.log', keep_file=True, verbose=True, log_level='debug') as logger:
 
-        # for p in Path('./01_configs/').glob("C*yml"):
-        #     validate_feature_selection_stability(p, str(p.with_suffix('_exclude_.xlsx')))
         # validate_feature_selection_stability(Path('./01_configs/C1_elastic_net_only.yml'),
         #                                      '_exclude_C1_elastic_net_only.xlsx')
         # validate_feature_selection_stability(Path('./01_configs/C2_RENT.yml'),
         #                                      '_exclude_C2_RENT.xlsx')
-        # validate_feature_selection_stability(Path('./01_configs/C3_BRENT.yml'),
+        # validate_feature_selection_stability(Path('./01_configs/C3_BBRENT.yml'),
         #                                      '_exclude_C3_BRENT.xlsx')
         # validate_feature_selection_stability(Path('./01_configs/C4_BoostingRENT.yml'),
         #                                      '_exclude_C4_BoostingRENT.xlsx')
-        # validate_feature_selection_stability(Path('./01_configs/C5_BootstrapingRENT.yml'),
+        # validate_feature_selection_stability(Path('./01_configs/C5_BaggingRENT.yml'),
         #                                       '_exclude_C5_BootstrappingRENT.xlsx')
         p_feat_list = Path("./output/trial-000_feature-A.xlsx")
         select_features = Path('./').glob("_exclude_C*xlsx")
 
+        p_out = Path('./01_feature_selection_stability.xlsx')
+        writer = pd.ExcelWriter(p_out)
+        Z = {}
+        df = []
+        jac_mat = []
         for i in select_features:
-            s = get_stability(i, p_feat_list)
-            print(f"{i}: {s}")
+            name = str(i).replace('.xlsx', '')
+            z, jac, s = get_stability(i, p_feat_list)
+            s.name = str(name)
+            df.append(s)
+            Z[name] = z
+            jac_mat.append(pd.Series(jac, name=name))
+        # Compute hypothesis test
+        ttest_df = []
+        for i in Z:
+            row = pd.Series([], name=i)
+            for j in Z:
+                if i == j:
+                    continue
+                zi = Z[i]
+                zj = Z[j]
+                t = hypothesisTestT(zi, zj, 0.05)
+                row[j] = t['p-value']
+            ttest_df.append(row)
+
+        df = pd.concat(df, axis=1)
+        ttest_df = pd.concat(ttest_df, axis=1).fillna('-')
+        ttest_df.sort_index(inplace=True)
+        ttest_df.sort_index(1, inplace=True)
+        jac_df = pd.concat(jac_mat, axis=1)
+        df.to_excel(writer, sheet_name="Stability Score")
+        jac_df.to_excel(writer, sheet_name="JAC")
+        ttest_df.to_excel(writer, sheet_name="Hypothesis Test")
+        writer.save()
+        writer.close()
+        print(df.to_string())
+        print(ttest_df.to_string())
 
 if __name__ == '__main__':
     # generate_augmented_features()
-    stability_summary()
+    # stability_summary()
+    feature_extraction()

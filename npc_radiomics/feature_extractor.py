@@ -4,6 +4,7 @@ import os
 import tempfile
 import zipfile
 import pprint
+import time
 from pathlib import Path
 from typing import Optional, Union, Sequence, Iterable
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -21,10 +22,9 @@ from mnts.scripts.normalization import run_graph_inference
 from mnts.mnts_logger import MNTSLogger
 from mnts.utils import get_unique_IDs, load_supervised_pair_by_IDs, repeat_zip
 from mnts.filters import MNTSFilterGraph
-from radiomics import featureextractor
+from radiomics import featureextractor, setVerbosity
 
 # Fix logger
-global logger
 
 __all__ = ['FeatureExtractor']
 
@@ -75,8 +75,10 @@ def get_radiomics_features(fn: Path,
 
     try:
         logger = MNTSLogger['radiomics_features']
+        logger.debug(f"Operating {fn} and {mn}")
         im = sitk.ReadImage(str(fn))
         msk = sitk.ReadImage(str(mn))
+        logger.debug(f"Finishing reading...")
         if len(args) > 0:
             logger.info(f"Get multiple segmentations, got {1 + len(args)}")
             msk = [msk] + [sitk.ReadImage(str(a)) for a in args]
@@ -108,10 +110,13 @@ def get_radiomics_features(fn: Path,
             im = subject['image'].as_sitk()
             msk = [subject[f'mask_{i}'].as_sitk() for i in range(len(msk))]
 
+        _start_time = time.time()
+        logger.info(f"Extracting feature...")
         feature_extractor = featureextractor.RadiomicsFeatureExtractor(str(param_file.resolve()))
         dfs = []
         for i, _msk in enumerate(msk):
             X = feature_extractor.execute(im, sitk.Cast(_msk, sitk.sitkUInt8))
+            logger.debug(f"finished extraction for mask {i}")
             df = pd.DataFrame.from_dict({k: (v.tolist() if hasattr(v, 'tolist') else str(v))
                                          for k, v in X.items()}, orient='index')
             df.columns = [f'{re.search(id_globber, fn.name).group()}']
@@ -123,6 +128,8 @@ def get_radiomics_features(fn: Path,
         else:
             out = pd.concat(dfs, axis=1)
         logger.debug(f"Intermediate result:\n {out}")
+        _end_time = time.time()
+        logger.debug(f"Finsihed extracting features, time took: {_end_time - _start_time}s")
         return out
 
     except Exception as e:
@@ -358,6 +365,8 @@ class FeatureExtractor(object):
             command = f"--input {im_path} --state-dir {str(norm_state)} --output {temp_dir_im} --file {f.name} --verbose " \
                       f"-n 12".split(' ')
             self._logger.debug(f"Command for image normalization: {command}")
+            self._logger.info("Start normalization...")
+            _start_time = time.time()
             run_graph_inference(command)
 
             # normalize the segmentation for spatial transforms
@@ -367,7 +376,8 @@ class FeatureExtractor(object):
                           f"-n 12 --force-segment".split(' ')
                 self._logger.debug(f"Command for segment normalization: {command}")
                 run_graph_inference(command)
-
+            _end_time = time.time()
+            self._logger.info(f"Finished normalization, time took: {_end_time - _start_time:.01f}s")
             # Get the name of the last output nodes !!! Only working on last output !!!
             ext_node_name = G.nodes[G._exits[-1]]['filter'].get_name()
 
@@ -384,10 +394,14 @@ class FeatureExtractor(object):
                 _f.write(param_file)
                 _f.flush()
 
+            _start_time = time.time()
+            self._logger.info("Start running pyradiomics...")
             df = self.extract_features(Path(temp_dir_im).joinpath(ext_node_name),
                                        Path(temp_dir_seg[0]).joinpath(ext_node_name),
                                        *[Path(_p).joinpath(ext_node_name) for _p in temp_dir_seg[1:]],
                                        param_file=param_file)
+            _end_time = time.time()
+            self._logger.info(f"Finished pyradiomics, time took: {_end_time - _start_time:.01f}s")
 
             # Cleanup
             try:

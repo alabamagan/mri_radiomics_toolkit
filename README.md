@@ -8,14 +8,15 @@
 
 ### A. Feature Extractor
 
-| Item | Specification                                                |
-| :--: | ------------------------------------------------------------ |
-|  A1  | Input: (1) Image, (2) Segementation ✔️                        |
+
+| Item | Specification                                                                                                                                                               |
+| :----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|  A1  | Input: (1) Image, (2) Segementation ✔️                                                                                                                                    |
 |  A2  | Output is an Excel file: Indexed with three columns, 1st column is filter name, 2nd column is feature group name, 3rd column is feature name; other columns are patient IDs |
-|  A3  | Can be run with in-line command                              |
-|  A4  | Interface to use PyRadiomics, config specified in a yaml file as described by PyRadiomics documentations |
-|  A5  | Allow room for in-house feature computation                  |
-|  A6  | Should have image normalization embedded (embedded in feature extractor) |
+|  A3  | Can be run with in-line command                                                                                                                                             |
+|  A4  | Interface to use PyRadiomics, config specified in a yaml file as described by PyRadiomics documentations                                                                    |
+|  A5  | Allow room for in-house feature computation                                                                                                                                 |
+|  A6  | Should have image normalization embedded (embedded in feature extractor)                                                                                                    |
 
 #### In-house feature computation computation
 
@@ -24,41 +25,42 @@
 
 ### B. Feature Selector
 
-| Item | Specification                                                |
-| :--: | ------------------------------------------------------------ |
-|  B1  | Input: (1) all features, (2) class of each data point✔️       |
-|  B2  | Output: (1) a set of selected features✔️                      |
-|  B3  | The selector should follow the backbone set out by RENT. A summary of features RENT criteria scores should be recorded and reported.✔️ |
-|  B4  | A `fit()` function, with 2 compulsory arguments, (1) the features and (2) the class of each data point✔️ |
+
+| Item | Specification                                                                                                                                                                                                                                                 |
+| :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|  B1  | Input: (1) all features, (2) class of each data point✔️                                                                                                                                                                                                     |
+|  B2  | Output: (1) a set of selected features✔️                                                                                                                                                                                                                    |
+|  B3  | The selector should follow the backbone set out by RENT. A summary of features RENT criteria scores should be recorded and reported.✔️                                                                                                                      |
+|  B4  | A`fit()` function, with 2 compulsory arguments, (1) the features and (2) the class of each data point✔️                                                                                                                                                     |
 |  B5  | `fit()` should receive an optional argument, that is the second set of the same features. If it is supplied the function will also run the feature filtration based on the ICC and t-test of between the values of the first and second set of features. ✔️ |
-|  B6  | Tunable hyper-parameters are $\tau_{1,2,3}$, `n_trial` ✔️     |
+|  B6  | Tunable hyper-parameters are$\tau_{1,2,3}$, `n_trial` ✔️                                                                                                                                                                                                    |
 
 ### C. Model building
 
-| Item | Specification                                                |
-| :--: | ------------------------------------------------------------ |
-|  C1  | Input: (1) selected feature of each case, (2) class of each data point✔️ |
-|  C2  | Output: (1) set of model states, (2) prediction results of each model✔️ |
+
+| Item | Specification                                                                                                                                                                         |
+| :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|  C1  | Input: (1) selected feature of each case, (2) class of each data point✔️                                                                                                            |
+|  C2  | Output: (1) set of model states, (2) prediction results of each model✔️                                                                                                             |
 |  C3  | Should included the following models: (1) support vector machine (SVM), b) elastic net, c) logistic regression, d) random forest, e) perceptron and f) k-nearest neighbors (KNN).✔️ |
-|  C4  | Should include a step where a grid search of the best hyper-parameters of each of the upper methods is to be performed✔️ |
-|  C5  | A method to save the states trained by best hyper-parameters. File save as `.pkl` format✔️ |
-|  C6  | A method to load the trained state✔️                          |
-|  C7  | Model trained in a cross-validation fashion✔️                 |
-|  C8  | A method to inference the incoming feature✔️                  |
+|  C4  | Should include a step where a grid search of the best hyper-parameters of each of the upper methods is to be performed✔️                                                            |
+|  C5  | A method to save the states trained by best hyper-parameters. File save as`.pkl` format✔️                                                                                           |
+|  C6  | A method to load the trained state✔️                                                                                                                                                |
+|  C7  | Model trained in a cross-validation fashion✔️                                                                                                                                       |
+|  C8  | A method to inference the incoming feature✔️                                                                                                                                        |
 
 ### D. Controller
 
-| Item | Specification                                                |
-| ---- | ------------------------------------------------------------ |
-| D1   | Input: same as features extractor A1                         |
-| D2   | Provide two key functions: (1) `fit()` and (2) `predict()`   |
+
+| Item | Specification                                                                                                                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| D1   | Input: same as features extractor A1                                                                                                |
+| D2   | Provide two key functions: (1)`fit()` and (2) `predict()`                                                                           |
 | D2   | `fit()` should have two compulsory arguments: (1) list of nifti files, (2) the classification state of the nifti image (BH or NPC?) |
-| D4   | `fit()` should include `**kwargs` as argument                |
-| D5   | `fit()` should return 1 for error and 0 for sucess           |
-| D6   | `predict()` should have one compulsory argument: (1) list of nifti files or path to one nifti file |
-| D7   | `predict()` should return 1 for error and 0 for sucess       |
-
-
+| D4   | `fit()` should include `**kwargs` as argument                                                                                       |
+| D5   | `fit()` should return 1 for error and 0 for sucess                                                                                  |
+| D6   | `predict()` should have one compulsory argument: (1) list of nifti files or path to one nifti file                                  |
+| D7   | `predict()` should return 1 for error and 0 for sucess                                                                              |
 
 # Feature Extraction
 
@@ -153,7 +155,7 @@ imageType:
   LBP3D:
     lbp3DIcosphereRadius : 0.4492
   LoG:
-    sigma: [0.4492, 0.4492, 0.4492]
+    sigma: [0.4492, ]
   Gradient: {}
   Exponential: {}
 
@@ -214,7 +216,7 @@ imageType:
   LBP3D:
     lbp3DIcosphereRadius : 0.9
   LoG:
-    sigma: [0.4492, 0.4492, 0.4492]
+    sigma: [0.4492]
   Gradient: {}
   Exponential: {}
 
@@ -383,30 +385,33 @@ flowchart LR
   subgraph Outer["Outer K-fold (Model performance evaluation)"]
     subgraph Inner["Inner bootstrap (feature selection)"]
       G[Bootstrapper]
-      B[BRENT]
+      B[Boosted RENT]
+      TrainData[(Training<br>set)]
       N[Initial filtering]
 	  G --> N --> B
 	  B --> |<br>Repeat|G
     end
-    E[Hold-out <br>splitter]
+    E[K-fold <br>splitter]
     D[(Hold-out<br>set)]
-    Inner --> K[Select best<br>features set<br>and re-train<br>model]
+    Models[Train six models]
+    Inner --> K(Selected features)
   end  
   A --> E
-  E --> G
+  E --> TrainData --> G
   E --> D
-  K ---> |Evaluate<br>performance|D
-  D --> |Mean<br>K-folds|F["Final<br>performance"]
-  D --> |Best /<br>ensemble|H[Final selected<br>model]
+  K --> Models
+  D --> Models
+  Models --> |Mean<br>K-folds|F["Final<br>performance"]
+  Models --> |Best /<br>ensemble|H[Final selected<br>model]
 ```
 
 #### TODO
 
-* [x] Build a bunch bunch of pipelines and get a list of best hyper-parameters
-  * [x] SVM
-  * [x] Logistic regression
-  * [x] Random forest
-  * [x] K nearest neighbour
+* [X] Build a bunch bunch of pipelines and get a list of best hyper-parameters
+  * [X] SVM
+  * [X] Logistic regression
+  * [X] Random forest
+  * [X] K nearest neighbour
   * [X] Elastic Net
     * For each run, record the rank of coefficients magnitude, average the ranks across several trials and us only 10 features
 
@@ -420,7 +425,7 @@ Based on the idea of ensembles, the authors focused the distribution of features
 2. To which degree do the feature weights alternate between positive and negative values? ($\tau_2$)
 3. Are feature weights significantly unequal to 0? ($\tau_3$)
 
-##### RENT workflow 
+##### RENT workflow
 
 ```mermaid
 flowchart LR
@@ -503,7 +508,7 @@ flowchart LR
   	EN12(Weak 1.2)
   	EN22(Weak 2.2)
   	EN32(Weak N.2)
-  	
+  
     EN1n(Weak 1.K)
   	EN2n(Weak 2.K)
   	ENn(Weak N.K)
@@ -521,10 +526,6 @@ flowchart LR
   A --> BS
   Criteria --> S[Selected features<br>subset]
 ```
-
-
-
-
 
 # Visualization
 

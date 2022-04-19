@@ -18,7 +18,7 @@ class Test_pipeline(unittest.TestCase):
         p_seg = Path('../samples/segment/')
         p_setting = Path('../samples/sample_pyrad_settings.yml')
 
-        with MNTSLogger('./', keep_file=False, verbose=True) as logger, \
+        with MNTSLogger('./', keep_file=False, verbose=True, log_level='debug') as logger, \
              tempfile.TemporaryDirectory() as f:
             # Create feature extractor
             logger.info("{:-^50s}".format(" Testing feature extraction "))
@@ -337,7 +337,7 @@ class Test_pipeline(unittest.TestCase):
         p_fe_state = Path('../samples/fe_saved_state.fe')
 
         # extract feature was ported to the controller, test it
-        with MNTSLogger('./default.log', verbose=True, keep_file=False) as logger:
+        with MNTSLogger('./default.log', verbose=True, keep_file=False, log_level='debug') as logger:
             ctl = Controller(setting=p, with_norm=True)
             ctl.load_norm_settings(fe_state=p_fe_state)
             df = ctl.extract_feature(p_im, p_seg, py_rad_param_file=p_pyrad)
@@ -373,7 +373,7 @@ class Test_pipeline(unittest.TestCase):
         p_fe_state = Path('../samples/fe_saved_state.fe')
 
         # extract feature was ported to the controller, test it
-        with MNTSLogger('./default.log', verbose=True, keep_file=True, log_level='debug') as logger, \
+        with MNTSLogger('./default.log', verbose=True, keep_file=False, log_level='debug') as logger, \
            tempfile.NamedTemporaryFile('wb', suffix='.ctl') as f:
             ctl = Controller(setting=p, with_norm=True)
             ctl.load_norm_settings(fe_state=p_fe_state)
@@ -426,4 +426,5 @@ if __name__ == '__main__':
     te = Test_pipeline()
     # te.test_controller_fit()
     # te.test_feature_extractor()
-    te.test_get_radiomics_features_w_aug()
+    # te.test_get_radiomics_features_w_aug()
+    te.test_controller_extraction()

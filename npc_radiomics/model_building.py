@@ -20,8 +20,6 @@ from tqdm.auto import *
 from functools import partial
 from RENT import RENT, stability
 
-global logger
-
 __all__ = ['cv_grid_search', 'model_building', 'ModelBuilder']
 
 def cv_grid_search(train_features: pd.DataFrame,
@@ -59,6 +57,7 @@ def cv_grid_search(train_features: pd.DataFrame,
             The sklearn estimator.
 
     """
+    logger = MNTSLogger['model-building']
     clf = pipeline.Pipeline([
         ('standardization', preprocessing.StandardScaler()),
         ('classification', 'passthrough')
@@ -66,7 +65,7 @@ def cv_grid_search(train_features: pd.DataFrame,
 
     # Construct tests to perform
     param_grid_dict = {
-        'Support Vector Machine': {
+        'Support Vector Regression': {
             'classification': [svm.SVR(tol=1E-4, max_iter=-1)],
             'classification__kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
             'classification__C': [1, 10, 100, 1000],
@@ -81,10 +80,10 @@ def cv_grid_search(train_features: pd.DataFrame,
         'Logistic Regression': {
             'classification': [linear_model.LogisticRegression(penalty='elasticnet',
                                                                solver='saga', tol=1E-5,
-                                                               max_iter=3500,
+                                                               max_iter=5500,
                                                                verbose=verbose)],
             'classification__C': [0.1, 1, 10, 100, 1000],
-            'classification__l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9],
+            'classification__l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9]
         },
         'Random Forest': {
             'classification': [ensemble.RandomForestRegressor(n_estimators=50)],
@@ -93,7 +92,7 @@ def cv_grid_search(train_features: pd.DataFrame,
         'Perceptron': {
             'classification': [neural_network.MLPRegressor(learning_rate='adaptive',
                                                            tol=1E-4,
-                                                           max_iter=3000,
+                                                           max_iter=5000,
                                                            verbose=verbose)],
             'classification__hidden_layer_sizes': [(100), (20, 50, 100), (100, 50, 20)],
             'classification__learning_rate_init': [1, 0.1, 1E-2, 1E-3, 1E-4]
@@ -110,9 +109,11 @@ def cv_grid_search(train_features: pd.DataFrame,
     predict_table = [test_targets]
     splitter = model_selection.StratifiedKFold(n_splits=5, shuffle=True)
     for key, param_grid in param_grid_dict.items():
+        logger.info("{:-^100}".format(f"Fitting for {key}"))
         split = splitter.split(train_targets, train_targets.values.ravel())
         grid = GridSearchCV(clf, n_jobs=10, param_grid=param_grid, scoring='roc_auc',
-                            cv=split)
+                            cv=split, verbose=MNTSLogger.is_verbose
+                            )
         grid.fit(train_features.values, train_targets.values.ravel())
 
         # Isolate best estimator
@@ -130,6 +131,7 @@ def cv_grid_search(train_features: pd.DataFrame,
             results[f'{key}'] = test_score
             results[f'{key} (train)'] = train_score
             predict_table.append(pd.Series(y, index=test_targets.index, name=f"{key}"))
+        logger.info("{:-^100}".format(f"Done for {key}"))
 
     # Collect the predictions of the testing sets
     if not test_targets is None and not test_features is None:
@@ -160,7 +162,7 @@ def model_building(train_features: pd.DataFrame,
                                                                l1_ratio = .5,
                                                                max_iter=3000,
                                                                verbose=True),
-        'Support Vector Machine': svm.SVR(kernel='linear',
+        'Support Vector Regression': svm.SVR(kernel='linear',
                                           tol=5E-4,
                                           C = 10,
                                           epsilon=0.01,
