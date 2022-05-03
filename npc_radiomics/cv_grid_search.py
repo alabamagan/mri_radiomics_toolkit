@@ -35,3 +35,19 @@ def plot_performance_vs_hyperparams(clf,
                  y='mean_test_score',
                  hue='param_classification__alpha',
                  ax=ax[1])
+
+if __name__ == '__main__':
+    clf = pipeline.Pipeline([
+        ('standardization', preprocessing.StandardScaler()),
+        ('classification', 'passthrough')
+    ])
+
+    # Construct tests to perform
+    param_grid_dict = {
+        'Elastic Net': {
+            'classification': [linear_model.ElasticNet(tol=1E-4, max_iter=5500)],
+            'classification__alpha': [0.02, 0.04, 0.06, 0.08, 0.1],
+            'classification__l1_ratio': [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+        }
+    }
+    plot_performance_vs_hyperparams(clf, param_grid_dict)

@@ -1,0 +1,10 @@
+Extractor:
+  id_globber: "^(NPC|T1rhoNPC|K|P|RHO)?[0-9]{2,4}"
+
+Selector:
+  criteria_threshold: [0.90,0.90, 0.99]
+  n_trials: 200   # RENT number of trails
+  boot_runs: 1    # Bootstrapped runs
+  boot_ratio: [1.0, 1.0]  # No bagging so run all the data
+  thres_percentage: 0
+  boosting: True

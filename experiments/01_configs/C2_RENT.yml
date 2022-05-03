@@ -1,0 +1,9 @@
+Extractor:
+  id_globber: "^(NPC|T1rhoNPC|K|P|RHO)?[0-9]{2,4}"
+
+Selector:
+  criteria_threshold: [ 0.9,0.9, 0.99 ] # Note that this must be square bracket for it to be loaded as array
+  n_trials: 200 # RENT number of trials
+  boot_runs: 1  # Bootstrapped runs
+  thres_percentage: 0.0
+  boosting: False
