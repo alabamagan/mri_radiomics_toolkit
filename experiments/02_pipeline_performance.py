@@ -13,7 +13,7 @@ from sklearn import *
 
 import numpy as np
 
-from npc_radiomics.controller import Controller
+from mri_radiomics_toolkit.controller import Controller
 
 
 def main():

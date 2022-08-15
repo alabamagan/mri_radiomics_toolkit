@@ -19,10 +19,10 @@ import sklearn
 
 from pathlib import Path
 from typing import Union, Any
-from npc_radiomics.controller import Controller
-from npc_radiomics.feature_selection import FeatureSelector
-from npc_radiomics.feature_extractor import FeatureExtractor
-from npc_radiomics.perf_metric import *
+from mri_radiomics_toolkit.controller import Controller
+from mri_radiomics_toolkit.feature_selection import FeatureSelector
+from mri_radiomics_toolkit.feature_extractor import FeatureExtractor
+from mri_radiomics_toolkit.perf_metric import *
 from mnts.mnts_logger import MNTSLogger
 
 from tqdm import auto
@@ -149,9 +149,9 @@ def validate_feature_selection_stability(clt_setting_path: Path,
 
 def feature_extraction():
     with MNTSLogger('./01_feature_selection_stability.log', keep_file=True, verbose=True, log_level='debug') as logger:
-        p_im = Path("../NPC_Radiomics/10.Pre-processed-v2/01.NyulNormalized")
-        p_seg_A = Path("../NPC_Radiomics/0B.Segmentation/01.First/")
-        p_seg_B = Path("../NPC_Radiomics/0B.Segmentation/02.Second/")
+        p_im = Path("../mri_radiomics_toolkit/10.Pre-processed-v2/01.NyulNormalized")
+        p_seg_A = Path("../mri_radiomics_toolkit/0B.Segmentation/01.First/")
+        p_seg_B = Path("../mri_radiomics_toolkit/0B.Segmentation/02.Second/")
         p_setting = Path("../pyradiomics_setting/pyradiomics_setting-v3.yml")
 
         extractor = FeatureExtractor(id_globber="^(NPC|T1rhoNPC|K|P|RHO)?[0-9]{2,4}")

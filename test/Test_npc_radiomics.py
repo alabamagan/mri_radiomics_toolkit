@@ -11,7 +11,7 @@ import numpy as np
 
 class Test_pipeline(unittest.TestCase):
     def test_feature_extractor_w_norm(self):
-        from npc_radiomics.feature_extractor import FeatureExtractor
+        from mri_radiomics_toolkit.feature_extractor import FeatureExtractor
         from mnts.mnts_logger import MNTSLogger
         globber = "^[0-9]+"
         p_im = Path('../samples/images_not_normalized/')
@@ -47,7 +47,7 @@ class Test_pipeline(unittest.TestCase):
             logger.info(f"Right:\n {df.to_string()}")
 
     def test_feature_extractor(self):
-        from npc_radiomics.feature_extractor import FeatureExtractor
+        from mri_radiomics_toolkit.feature_extractor import FeatureExtractor
         from mnts.mnts_logger import MNTSLogger
         globber = "^[0-9]+"
         p_im = Path('../samples/images/')
@@ -84,7 +84,7 @@ class Test_pipeline(unittest.TestCase):
             logger.info(f"Right:\n {df.to_string()}")
 
     def test_feature_extractor_w_aug(self):
-        from npc_radiomics.feature_extractor import FeatureExtractor
+        from mri_radiomics_toolkit.feature_extractor import FeatureExtractor
         from mnts.mnts_logger import MNTSLogger
         import torchio as tio
 
@@ -115,7 +115,7 @@ class Test_pipeline(unittest.TestCase):
             logger.info("Feature extraction pass...")
 
     def test_feature_extractor_param_file_load(self):
-        from npc_radiomics.feature_extractor import FeatureExtractor
+        from mri_radiomics_toolkit.feature_extractor import FeatureExtractor
         from mnts.mnts_logger import MNTSLogger
         globber = "^[0-9]+"
         p_im = Path('../samples/images/')
@@ -132,7 +132,7 @@ class Test_pipeline(unittest.TestCase):
             self.assertTrue(fe.param_file == p_setting.read_text())
 
     def test_get_radiomics_features_w_aug(self):
-        from npc_radiomics.feature_extractor import FeatureExtractor, get_radiomics_features
+        from mri_radiomics_toolkit.feature_extractor import FeatureExtractor, get_radiomics_features
         from mnts.mnts_logger import MNTSLogger
         from mnts.utils import get_unique_IDs, get_fnames_by_IDs
         import torchio as tio
@@ -176,7 +176,7 @@ class Test_pipeline(unittest.TestCase):
             pass
 
     def test_feature_selection(self):
-        from npc_radiomics.feature_selection import FeatureSelector
+        from mri_radiomics_toolkit.feature_selection import FeatureSelector
         from mnts.mnts_logger import MNTSLogger
         import pandas as pd
 
@@ -264,8 +264,8 @@ class Test_pipeline(unittest.TestCase):
         self.assertFalse(all([x == "Passed" for x in test_result.items()]))
 
     def test_model_building(self):
-        from npc_radiomics.feature_selection import FeatureSelector
-        from npc_radiomics.model_building import ModelBuilder
+        from mri_radiomics_toolkit.feature_selection import FeatureSelector
+        from mri_radiomics_toolkit.model_building import ModelBuilder
         from mnts.mnts_logger import MNTSLogger
         from sklearn.model_selection import train_test_split
         import pandas as pd
@@ -326,7 +326,7 @@ class Test_pipeline(unittest.TestCase):
         pass
 
     def test_controller_extraction(self):
-        from npc_radiomics.controller import Controller
+        from mri_radiomics_toolkit.controller import Controller
         from mnts.mnts_logger import MNTSLogger
 
         p = Path('../samples/sample_controller_settings.yml')
@@ -345,7 +345,7 @@ class Test_pipeline(unittest.TestCase):
         pass
 
     def test_controller_load_norm(self):
-        from npc_radiomics.controller import Controller
+        from mri_radiomics_toolkit.controller import Controller
         from mnts.mnts_logger import MNTSLogger
 
         p = Path('../samples/sample_controller_settings.yml')
@@ -362,7 +362,7 @@ class Test_pipeline(unittest.TestCase):
             logger.info(f"State 2: \n{pprint.pformat(ctl.extractor.saved_state)}")
 
     def test_controller_fit(self):
-        from npc_radiomics.controller import Controller
+        from mri_radiomics_toolkit.controller import Controller
         from mnts.mnts_logger import MNTSLogger
 
         p = Path('../samples/sample_controller_settings.yml')
@@ -385,7 +385,7 @@ class Test_pipeline(unittest.TestCase):
             logger.info(f"Saved state: {_ctl.saved_state}")
 
     def test_stability_metric(self):
-        from npc_radiomics.perf_metric import getStability, confidenceIntervals, hypothesisTestT, hypothesisTestV, feat_list_to_binary_mat
+        from mri_radiomics_toolkit.perf_metric import getStability, confidenceIntervals, hypothesisTestT, hypothesisTestV, feat_list_to_binary_mat
         import pandas as pd
         from mnts.mnts_logger import MNTSLogger
 

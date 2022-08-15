@@ -10,7 +10,7 @@ from mnts.mnts_logger import MNTSLogger
 from mnts.utils import get_unique_IDs, load_supervised_pair_by_IDs, repeat_zip
 from pprint import *
 
-from npc_radiomics.feature_extractor import FeatureExtractor
+from mri_radiomics_toolkit.feature_extractor import FeatureExtractor
 import multiprocessing as mpi
 import argparse
 
