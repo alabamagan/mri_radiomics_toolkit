@@ -9,7 +9,8 @@ from typing import Union, Optional, Iterable, List, Callable, Sequence, Tuple
 
 import sklearn
 from sklearn.model_selection import *
-from sklearn import *
+from sklearn import feature_selection as skfs
+from sklearn import preprocessing, linear_model
 from scipy.stats import *
 
 import numpy as np
@@ -247,7 +248,7 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
 
     # Drop features with extremely low variance (i.e., most are same value)
     logger.info("Dropping features with low variance...")
-    var_filter = feature_selection.VarianceThreshold(threshold=.95*(1-.95))
+    var_filter = skfs.VarianceThreshold(threshold=.95*(1-.95))
     var_feats_a = var_filter.fit_transform(features_a.T)
     var_feats_a_index = features_a.index[var_filter.get_support()]
     var_feats_b = var_filter.fit_transform(features_b.T)
@@ -452,7 +453,7 @@ def features_selection(features_a: pd.DataFrame,
         feats_a, feats_b = preliminary_feature_filtering(features_a, features_b, targets, ICC_form='ICC2k')
     else:
         # Just do variance filter and rop the useless columns
-        var_filter = feature_selection.VarianceThreshold(threshold=.95*(1-.95))
+        var_filter = skfs.VarianceThreshold(threshold=.95*(1-.95))
         logger.info("Dropping 'Diganostics' column.")
         feats_a = features_a.drop('diagnostics', inplace=False)
 

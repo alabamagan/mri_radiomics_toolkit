@@ -59,6 +59,10 @@ def get_radiomics_features(fn: Path,
     r"""
     Return the features computed by pyramdiomics in a `pd.DataFrame` structure.
 
+    TODO:
+        - [ ] Handle more than one label class.
+        - [ ] Handle slice-by-silce feature extraction
+
     Args:
         fn (Path):
             Image file directory (needs to be .nii.gz).
@@ -110,6 +114,9 @@ def get_radiomics_features(fn: Path,
             im = subject['image'].as_sitk()
             msk = [subject[f'mask_{i}'].as_sitk() for i in range(len(msk))]
 
+        #╔═════════════════════╗
+        #║▐ Extract features   ║
+        #╚═════════════════════╝
         _start_time = time.time()
         logger.info(f"Extracting feature...")
         feature_extractor = featureextractor.RadiomicsFeatureExtractor(str(param_file.resolve()))
@@ -145,6 +152,11 @@ def get_radiomics_features_from_folder(im_dir: Path,
                                        augmentor: tio.Compose = None) -> pd.DataFrame:
     r"""
     This pairs up the image and the segmentation files using the global regex globber
+
+    TODO:
+        - [ ] Handle one image many segmentation
+        - [ ] Creates new ID tags for more than 1 segmentation
+
 
     Args:
         im_dir (Path):

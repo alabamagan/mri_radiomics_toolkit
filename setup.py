@@ -5,7 +5,7 @@ from setuptools.extension import Extension
 import os
 
 setup(
-    name='bbrent-radiomics',
+    name='mri-radiomics-toolkit',
     version='0.2.0',
     packages=find_packages(),
     url='',

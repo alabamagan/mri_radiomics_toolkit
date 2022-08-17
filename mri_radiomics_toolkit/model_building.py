@@ -20,7 +20,7 @@ from tqdm.auto import *
 from functools import partial
 from RENT import RENT, stability
 
-__all__ = ['cv_grid_search', 'model_building', 'ModelBuilder']
+__all__ = ['cv_grid_search', 'model_building_', 'ModelBuilder']
 
 def cv_grid_search(train_features: pd.DataFrame,
                    train_targets: pd.DataFrame,
@@ -141,10 +141,10 @@ def cv_grid_search(train_features: pd.DataFrame,
     return best_params, results, predict_table, best_estimators
 
 
-def model_building(train_features: pd.DataFrame,
-                   train_targets: pd.DataFrame,
-                   test_features: Optional[pd.DataFrame] = None,
-                   test_targets: Optional[pd.DataFrame] = None) -> Tuple[dict]:
+def model_building_(train_features: pd.DataFrame,
+                    train_targets: pd.DataFrame,
+                    test_features: Optional[pd.DataFrame] = None,
+                    test_targets: Optional[pd.DataFrame] = None) -> Tuple[dict]:
     r"""
     Train model without grid-search. If test set data is provided, also evalute the performance of the built model using
     the test set data. This function is essentially same as `cv_grid_search` except there are no grid search.

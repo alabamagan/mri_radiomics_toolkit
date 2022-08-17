@@ -1,5 +1,3 @@
-from . import FeatureExtractor, FeatureSelector, ModelBuilder
-
 from typing import Optional
 from pathlib import Path
 from mnts.scripts.normalization import *
@@ -10,6 +8,8 @@ import yaml
 import pprint
 import pandas as pd
 from io import BytesIO
+from . import FeatureExtractor, FeatureSelector, ModelBuilder
+
 
 __all__ = ['Controller']
 
