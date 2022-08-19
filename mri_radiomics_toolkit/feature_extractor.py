@@ -56,7 +56,8 @@ def get_radiomics_features(fn: Path,
                            *args,
                            id_globber: str = "^[0-9a-zA-Z]+",
                            augmentor: tio.Compose = None,
-                           by_slice: int = -1) -> pd.DataFrame:
+                           by_slice: int = -1,
+                           connected_components = False) -> pd.DataFrame:
     r"""
     Return the features computed by pyramdiomics in a `pd.DataFrame` structure. This data
     output will at most has three column levels. The primary level is `Study number`,
@@ -85,6 +86,10 @@ def get_radiomics_features(fn: Path,
             segmentation. The output `pd.DataFrame` will have an additional column level
             called `Slice number`, which will mark the number of slice that set of
             features were extracted. Default to be -1.
+        connected_components (bool, Optional):
+            If True, convert the msk into binary mask and then perform connected body
+            filter to separate the mask into node island before extraction. Default to
+            `False.
     Returns:
         pd.DataFrame
     """
@@ -138,6 +143,11 @@ def get_radiomics_features(fn: Path,
             # cast mask as uint
             _msk = sitk.Cast(_msk, sitk.sitkUInt8)
 
+            if connected_components:
+                # convert msk to binary and then rearrange ids
+                _msk = _msk != 0
+                _msk = sitk.ConnectedComponent(_msk)
+
             # check if the mask has more than one classes
             label_stat = sitk.LabelShapeStatisticsImageFilter()
             label_stat.Execute(_msk)
@@ -164,7 +174,9 @@ def get_radiomics_features(fn: Path,
                     _df.columns.name = 'Study number'
 
                 else:
-                    assert by_slice <= _binmsk.GetDimension()
+                    # if features are to be extracted slice-by-slice
+                    assert by_slice <= _binmsk.GetDimension(), \
+                        f"by_slice is larger than dimension: {_binmsk.GetDimension()}"
                     slice_cols = []
                     for j in range(_binmsk.GetSize()[by_slice]):
                         _index = [slice(None)] * by_slice + [j]

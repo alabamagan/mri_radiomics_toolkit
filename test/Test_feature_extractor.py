@@ -34,6 +34,7 @@ class Test_feature_extractor(unittest.TestCase):
         # single sample pair
         self.sample_img_1 = Path("test_data/image_mul_label/TEST01_img_t2wfs.nii.gz")
         self.sample_seg_1 = Path("test_data/segment_mul_label/TEST01_segment.nii.gz")
+        self.sample_seg_1_bin = Path("test_data/segment_mul_label/TEST01_segment_binary.nii.gz")
 
         # pyradiomics settings
         self.settings_1 = Path("./test_data/test_pyrad_setting_1.yml")
@@ -50,3 +51,14 @@ class Test_feature_extractor(unittest.TestCase):
                                                                   self.sample_seg_1,
                                                                   self.settings_1,
                                                                   by_slice = 2)
+        self.assertIsInstance(extracted_features, pd.DataFrame)
+        self.assertEqual(3, extracted_features.columns.nlevels)
+
+    def test_get_radiomics_features_conn(self):
+        extracted_features: pd.DataFrame = get_radiomics_features(self.sample_img_1,
+                                                                  self.sample_seg_1_bin,
+                                                                  self.settings_1,
+                                                                  by_slice = 2,
+                                                                  connected_components=True)
+        self.assertIsInstance(extracted_features, pd.DataFrame)
+        self.assertEqual(3, extracted_features.columns.nlevels)
