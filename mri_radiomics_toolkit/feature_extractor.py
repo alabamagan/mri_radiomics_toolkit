@@ -55,12 +55,13 @@ def get_radiomics_features(fn: Path,
                            param_file: Path,
                            *args,
                            id_globber: str = "^[0-9a-zA-Z]+",
-                           augmentor: tio.Compose = None) -> pd.DataFrame:
+                           augmentor: tio.Compose = None,
+                           by_slice: int = -1) -> pd.DataFrame:
     r"""
     Return the features computed by pyramdiomics in a `pd.DataFrame` structure.
 
     TODO:
-        - [ ] Handle more than one label class.
+        - [x] Handle more than one label class.
         - [ ] Handle slice-by-silce feature extraction
 
     Args:
@@ -72,6 +73,13 @@ def get_radiomics_features(fn: Path,
             Path to the pyradiomics setting.
         *args (Sequence of Path):
             If this is provided, they directory is treated as extra segmentation
+        id_globber (str, Optional):
+            Regex pattern for globbing the study ID from `fn`. Default to "^[0-9a-zA-Z]"
+        augmentor (tio.Compose, Optional):
+            If not None, the input image loaded from `fn` will be first augmented prior
+            to feature extraction. Default to `None`.
+        by_slice (int, Optional):
+            If an integer >= 0 is specified, the
     Returns:
         pd.DataFrame
     """
@@ -79,7 +87,7 @@ def get_radiomics_features(fn: Path,
 
     try:
         logger = MNTSLogger['radiomics_features']
-        logger.debug(f"Operating {fn} and {mn}")
+        logger.debug(pprint.pformat({'Input': fn, 'Mask': mn, 'args': args}))
         im = sitk.ReadImage(str(fn))
         msk = sitk.ReadImage(str(mn))
         logger.debug(f"Finishing reading...")
@@ -122,13 +130,35 @@ def get_radiomics_features(fn: Path,
         feature_extractor = featureextractor.RadiomicsFeatureExtractor(str(param_file.resolve()))
         dfs = []
         for i, _msk in enumerate(msk):
-            X = feature_extractor.execute(im, sitk.Cast(_msk, sitk.sitkUInt8))
-            logger.debug(f"finished extraction for mask {i}")
-            df = pd.DataFrame.from_dict({k: (v.tolist() if hasattr(v, 'tolist') else str(v))
-                                         for k, v in X.items()}, orient='index')
-            df.columns = [f'{re.search(id_globber, fn.name).group()}']
+            # cast mask as uint
+            _msk = sitk.Cast(_msk, sitk.sitkUInt8)
+
+            # check if the mask has more than one classes
+            label_stat = sitk.LabelShapeStatisticsImageFilter()
+            label_stat.Execute(_msk)
+            val = set(label_stat.GetLabels())
+
+            # Create a new binary image for each non-zero classes
+            _msk = {v: _msk == v for v in val}
+
+            cols = []
+            for val, _binmsk in _msk.items():
+                _x = feature_extractor.execute(im, _binmsk)
+                logger.debug(f"finished extraction for mask {i} value {val}")
+                _df = pd.DataFrame.from_dict({k: (v.tolist() if hasattr(v, 'tolist') else str(v))
+                                             for k, v in _x.items()}, orient='index')
+
+                if len(_msk) == 1:
+                    _col_name = [f'{re.search(id_globber, fn.name).group()}']
+                else:
+                    _col_name = pd.MultiIndex.from_tuples([[f'{re.search(id_globber, fn.name).group()}', f'C{val}']])
+
+                _df.columns = _col_name
+                cols.append(_df)
+            df = pd.concat(cols, axis=1)
             if len(msk) > 1:
-                df.columns = pd.MultiIndex.from_product([['Segment_' + chr(ord('A') + i)], df.columns])
+                # TODO: need to test if this still works
+                df.columns = pd.MultiIndex.from_product([df.columns, ['Segment' + chr(ord('A') + i)]])
             dfs.append(df)
         if len(dfs) == 1:
             out = dfs[0]
