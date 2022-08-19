@@ -58,11 +58,12 @@ def get_radiomics_features(fn: Path,
                            augmentor: tio.Compose = None,
                            by_slice: int = -1) -> pd.DataFrame:
     r"""
-    Return the features computed by pyramdiomics in a `pd.DataFrame` structure.
-
-    TODO:
-        - [x] Handle more than one label class.
-        - [ ] Handle slice-by-silce feature extraction
+    Return the features computed by pyramdiomics in a `pd.DataFrame` structure. This data
+    output will at most has three column levels. The primary level is `Study number`,
+    which are globbed by the `id_globber` from the `fn`. The secondary level is `Slice
+    number`, which will only be added if you set `by_slice` to be >= 0. The tertiary level
+    is the `Class code`, which will only be added if the segmentation `mn` consist of more
+    than one class value.
 
     Args:
         fn (Path):
@@ -79,7 +80,11 @@ def get_radiomics_features(fn: Path,
             If not None, the input image loaded from `fn` will be first augmented prior
             to feature extraction. Default to `None`.
         by_slice (int, Optional):
-            If an integer >= 0 is specified, the
+            If an integer >= 0 is specified, the slices along the specified axis will be
+            scanned one-by-one and features will be extracted from the slices with
+            segmentation. The output `pd.DataFrame` will have an additional column level
+            called `Slice number`, which will mark the number of slice that set of
+            features were extracted. Default to be -1.
     Returns:
         pd.DataFrame
     """
@@ -143,21 +148,51 @@ def get_radiomics_features(fn: Path,
 
             cols = []
             for val, _binmsk in _msk.items():
-                _x = feature_extractor.execute(im, _binmsk)
-                logger.debug(f"finished extraction for mask {i} value {val}")
-                _df = pd.DataFrame.from_dict({k: (v.tolist() if hasattr(v, 'tolist') else str(v))
-                                             for k, v in _x.items()}, orient='index')
+                if by_slice < 0:
+                    _x = feature_extractor.execute(im, _binmsk)
+                    logger.debug(f"finished extraction for mask {i} value {val}")
+                    _df = pd.DataFrame.from_dict({k: (v.tolist() if hasattr(v, 'tolist') else str(v))
+                                                 for k, v in _x.items()}, orient='index')
 
-                if len(_msk) == 1:
-                    _col_name = [f'{re.search(id_globber, fn.name).group()}']
+                    if len(_msk) == 1:
+                        _col_name = [f'{re.search(id_globber, fn.name).group()}']
+                    else:
+                        _col_name = pd.MultiIndex.from_tuples([[f'{re.search(id_globber, fn.name).group()}',
+                                                                f'C{val}']],
+                                                              name = ('Study number', 'Class code'))
+                    _df.columns = _col_name
+                    _df.columns.name = 'Study number'
+
                 else:
-                    _col_name = pd.MultiIndex.from_tuples([[f'{re.search(id_globber, fn.name).group()}', f'C{val}']])
+                    assert by_slice <= _binmsk.GetDimension()
+                    slice_cols = []
+                    for j in range(_binmsk.GetSize()[by_slice]):
+                        _index = [slice(None)] * by_slice + [j]
+                        _slice_im = sitk.JoinSeries(im[_index])
+                        _slice_seg = sitk.JoinSeries(_binmsk[_index])
+                        # skip if slice is empty
+                        if sitk.GetArrayFromImage(_slice_seg).sum() == 0:
+                            continue
 
-                _df.columns = _col_name
+                        _x = feature_extractor.execute(_slice_im, _slice_seg)
+                        logger.debug(f"finished extraction for mask {i}, slice {j} value {val}")
+                        slice_df = pd.DataFrame.from_dict({k: (v.tolist() if hasattr(v, 'tolist') else str(v))
+                                                     for k, v in _x.items()}, orient='index')
+
+                        if len(_msk) == 1:
+                            _col_name = [f'{re.search(id_globber, fn.name).group()}']
+                        else:
+                            _col_name = pd.MultiIndex.from_tuples([[f'{re.search(id_globber, fn.name).group()}',
+                                                                    f'S{j}',
+                                                                    f'C{val}']],
+                                                                  names=('Study number', 'Slice number', 'Class code'))
+                        slice_df.columns = _col_name
+                        slice_cols.append(slice_df)
+                        pass
+                    _df = pd.concat(slice_cols, axis=1)
                 cols.append(_df)
             df = pd.concat(cols, axis=1)
             if len(msk) > 1:
-                # TODO: need to test if this still works
                 df.columns = pd.MultiIndex.from_product([df.columns, ['Segment' + chr(ord('A') + i)]])
             dfs.append(df)
         if len(dfs) == 1:
@@ -182,11 +217,6 @@ def get_radiomics_features_from_folder(im_dir: Path,
                                        augmentor: tio.Compose = None) -> pd.DataFrame:
     r"""
     This pairs up the image and the segmentation files using the global regex globber
-
-    TODO:
-        - [ ] Handle one image many segmentation
-        - [ ] Creates new ID tags for more than 1 segmentation
-
 
     Args:
         im_dir (Path):
