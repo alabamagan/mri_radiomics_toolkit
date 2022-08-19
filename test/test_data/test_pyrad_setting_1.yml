@@ -1,0 +1,23 @@
+imageType:
+  Original: {}
+  LBP2D:
+    binWidth: 0.25
+    lbp2DRadius: 0.9
+    lbp2DMethod: 'default'
+    force2D: True
+
+featureClass:
+  firstorder:
+    - Energy
+    - Entropy
+    - Kurtosis
+    - Maximum
+    - MeanAbsoluteDeviation
+    - Mean
+    - Variance
+  shape:
+
+setting:
+  resampledPixelSpacing: [0.4492, 0.4492, 0]
+  binWidth: 1
+  preCrop: True

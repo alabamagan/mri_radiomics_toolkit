@@ -27,7 +27,7 @@ class Test_pipeline(unittest.TestCase):
     def setUp(self) -> None:
         self._logger = Test_pipeline.cls_logger
         self._globber = "^[0-9]+"
-        self._p_setting = Path('../samples/sample_pyrad_settings.yml')
+        self._p_setting = Path('test_data/assets/sample_pyrad_settings.yml')
         self.temp_dir_obj = tempfile.TemporaryDirectory()
         self.temp_dir = Path(self.temp_dir_obj.name)
 
@@ -43,8 +43,8 @@ class Test_pipeline(unittest.TestCase):
         self.temp_dir_obj.cleanup()
 
     def test_feature_extractor_w_norm(self):
-        p_im = Path('../samples/images_not_normalized/')
-        p_seg = Path('../samples/segment/')
+        p_im = Path('test_data/images_not_normalized/')
+        p_seg = Path('test_data/segment/')
 
         # Create feature extractor
         self._logger.info("{:-^50s}".format(" Testing feature extraction "))
@@ -59,7 +59,7 @@ class Test_pipeline(unittest.TestCase):
 
         # test save state
         self._logger.info("{:-^50s}".format(" Testing save state "))
-        fe.save(Path('../samples/fe_saved_state.fe'))
+        fe.save(Path('test_data/assets/fe_saved_state.fe'))
         fe.save(Path(self.temp_dir))
         self.assertTrue(Path(self.temp_dir).joinpath('saved_state.fe').is_file())
 
@@ -73,8 +73,8 @@ class Test_pipeline(unittest.TestCase):
         self._logger.info(f"Right:\n {df.to_string()}")
 
     def test_feature_extractor(self):
-        p_im = Path('../samples/images/')
-        p_seg = Path('../samples/segment')
+        p_im = Path('test_data/images/')
+        p_seg = Path('test_data/segment')
 
         # Create feature extractor
         self._logger.info("{:-^50s}".format(" Testing feature extraction "))
@@ -104,9 +104,9 @@ class Test_pipeline(unittest.TestCase):
         self._logger.info(f"Right:\n {df.to_string()}")
 
     def test_feature_extractor_w_aug(self):
-        p_im = Path('../samples/images/')
-        p_seg_A = Path('../samples/segment')
-        p_seg_B = Path('../samples/segment')
+        p_im = Path('test_data/images/')
+        p_seg_A = Path('test_data/segment')
+        p_seg_B = Path('test_data/segment')
 
         # Create feature extractor
         self._logger.info("{:-^50s}".format(" Testing feature extraction "))
@@ -121,9 +121,9 @@ class Test_pipeline(unittest.TestCase):
 
     def test_feature_extractor_param_file_load(self):
         from mri_radiomics_toolkit.feature_extractor import FeatureExtractor
-        p_im = Path('../samples/images/')
-        p_seg = Path('../samples/segment')
-        self._p_setting = Path('../samples/sample_pyrad_settings.yml')
+        p_im = Path('test_data/images/')
+        p_seg = Path('test_data/segment')
+        self._p_setting = Path('test_data/assets/sample_pyrad_settings.yml')
 
         fe = FeatureExtractor(id_globber="^[0-9]+")
         fe.param_file = self._p_setting
@@ -138,9 +138,9 @@ class Test_pipeline(unittest.TestCase):
         from mri_radiomics_toolkit.feature_extractor import get_radiomics_features
         import os
 
-        p_im = Path('../samples/images/')
-        p_seg_A = Path('../samples/segment')
-        p_seg_B = Path('../samples/segment')
+        p_im = Path('test_data/images/')
+        p_seg_A = Path('test_data/segment')
+        p_seg_B = Path('test_data/segment')
 
 
         dfs = []
@@ -167,9 +167,9 @@ class Test_pipeline(unittest.TestCase):
         pass
 
     def test_feature_selection(self):
-        p_feat_a = Path('../samples/samples_feat_1st.xlsx')
-        p_feat_b = Path('../samples/samples_feat_2nd.xlsx')
-        p_gt = Path('../samples/sample_datasheet.csv')
+        p_feat_a = Path('test_data/assets/samples_feat_1st.xlsx')
+        p_feat_b = Path('test_data/assets/samples_feat_2nd.xlsx')
+        p_gt = Path('test_data/assets/sample_datasheet.csv')
 
         features_a = pd.read_excel(str(p_feat_a), index_col=[0, 1, 2]).T
         features_b = pd.read_excel(str(p_feat_b), index_col=[0, 1, 2]).T
@@ -251,9 +251,9 @@ class Test_pipeline(unittest.TestCase):
     def test_model_building(self):
         from sklearn.model_selection import train_test_split
 
-        p_feat_a = Path('../samples/samples_feat_1st.xlsx')
-        p_gt = Path('../samples/sample_datasheet.csv')
-        p_fss = Path('../samples/fs_saved_state.fss')
+        p_feat_a = Path('test_data/assets/samples_feat_1st.xlsx')
+        p_gt = Path('test_data/assets/sample_datasheet.csv')
+        p_fss = Path('test_data/assets/fs_saved_state.fss')
 
         features = pd.read_excel(str(p_feat_a), index_col=[0, 1, 2]).T
         gt = pd.read_csv(str(p_gt), index_col=0)
@@ -305,12 +305,12 @@ class Test_pipeline(unittest.TestCase):
         pass
 
     def test_controller_extraction(self):
-        p = Path('../samples/sample_controller_settings.yml')
-        p_im = Path('../samples/images_not_normalized/')
-        p_seg = Path('../samples/segment/')
-        p_gt = Path('../samples/sample_datasheet.csv')
-        p_pyrad = Path('../samples/sample_pyrad_settings.yml')
-        p_fe_state = Path('../samples/fe_saved_state.fe')
+        p          = Path('test_data/assets/sample_controller_settings.yml')
+        p_im       = Path('test_data/images_not_normalized/')
+        p_seg      = Path('test_data/segment/')
+        p_gt       = Path('test_data/assets/sample_datasheet.csv')
+        p_pyrad    = Path('test_data/assets/sample_pyrad_settings.yml')
+        p_fe_state = Path('test_data/assets/fe_saved_state.fe')
 
         # extract feature was ported to the controller, test it
         ctl = Controller(setting=p, with_norm=True)
@@ -319,10 +319,10 @@ class Test_pipeline(unittest.TestCase):
         self._logger.info(f"features {df}")
 
     def test_controller_load_norm(self):
-        p = Path('../samples/sample_controller_settings.yml')
+        p = Path('test_data/assets/sample_controller_settings.yml')
         p_norm_state = Path('../assets/t2wfs/')
         p_norm_graph = Path('../assets/t2wfs/norm_graph.yml')
-        p_fe_state = Path('../samples/fe_saved_state.fe')
+        p_fe_state = Path('test_data/assets/fe_saved_state.fe')
 
         ctl = Controller(setting=p, with_norm=True)
         ctl.load_norm_settings(norm_graph=p_norm_graph, norm_state_file=p_norm_state)
@@ -332,12 +332,12 @@ class Test_pipeline(unittest.TestCase):
         self._logger.info(f"State 2: \n{pprint.pformat(ctl.extractor.saved_state)}")
 
     def test_controller_fit(self):
-        p = Path('../samples/sample_controller_settings.yml')
-        p_im = Path('../samples/images_not_normalized/')
-        p_seg = Path('../samples/segment/')
-        p_gt = Path('../samples/sample_datasheet.csv')
-        p_pyrad = Path('../samples/sample_pyrad_settings.yml')
-        p_fe_state = Path('../samples/fe_saved_state.fe')
+        p = Path('test_data/assets/sample_controller_settings.yml')
+        p_im = Path('test_data/images_not_normalized/')
+        p_seg = Path('test_data/segment/')
+        p_gt = Path('test_data/assets/sample_datasheet.csv')
+        p_pyrad = Path('test_data/assets/sample_pyrad_settings.yml')
+        p_fe_state = Path('test_data/assets/fe_saved_state.fe')
 
         # extract feature was ported to the controller, test it
         with tempfile.NamedTemporaryFile('wb', suffix='.ctl') as f:
@@ -356,9 +356,9 @@ class Test_pipeline(unittest.TestCase):
                                                'Statistical Test'
                                                ]}
 
-        p_sel_1 = Path('../samples/sample_selected_feat_1.xlsx')
-        p_sel_2 = Path('../samples/sample_selected_feat_2.xlsx')
-        p_feat_list = Path('../samples/samples_feat_1st.xlsx')
+        p_sel_1 = Path('test_data/assets/sample_selected_feat_1.xlsx')
+        p_sel_2 = Path('test_data/assets/sample_selected_feat_2.xlsx')
+        p_feat_list = Path('test_data/assets/samples_feat_1st.xlsx')
 
         sel_1 = pd.read_excel(p_sel_1, index_col=0).fillna('').astype(str)
         sel_2 = pd.read_excel(p_sel_2, index_col=0).fillna('').astype(str)

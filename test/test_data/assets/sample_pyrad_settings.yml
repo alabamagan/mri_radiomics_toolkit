@@ -29,6 +29,6 @@ featureClass:
   glrlm:
 
 setting:
-  resampledPixelSpacing: [0.4492, 0.4492, 0.4492]
+  resampledPixelSpacing: [2, 2, 2]
   binWidth: 1
   preCrop: True
