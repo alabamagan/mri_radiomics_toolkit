@@ -191,13 +191,10 @@ def get_radiomics_features(fn: Path,
                         slice_df = pd.DataFrame.from_dict({k: (v.tolist() if hasattr(v, 'tolist') else str(v))
                                                      for k, v in _x.items()}, orient='index')
 
-                        if len(_msk) == 1:
-                            _col_name = [f'{re.search(id_globber, fn.name).group()}']
-                        else:
-                            _col_name = pd.MultiIndex.from_tuples([[f'{re.search(id_globber, fn.name).group()}',
-                                                                    f'S{j}',
-                                                                    f'C{val}']],
-                                                                  names=('Study number', 'Slice number', 'Class code'))
+                        _col_name = pd.MultiIndex.from_tuples([[f'{re.search(id_globber, fn.name).group()}',
+                                                                f'S{j}',
+                                                                f'C{val}']],
+                                                              names=('Study number', 'Slice number', 'Class code'))
                         slice_df.columns = _col_name
                         slice_cols.append(slice_df)
                         pass
@@ -226,7 +223,8 @@ def get_radiomics_features_from_folder(im_dir: Path,
                                        *args,
                                        id_globber: str = "^[0-9a-zA-Z]+",
                                        idlist: Iterable[str] = None,
-                                       augmentor: tio.Compose = None) -> pd.DataFrame:
+                                       augmentor: tio.Compose = None,
+                                       **kwargs) -> pd.DataFrame:
     r"""
     This pairs up the image and the segmentation files using the global regex globber
 
@@ -278,10 +276,7 @@ def get_radiomics_features_from_folder(im_dir: Path,
 
     source = [im_dir.joinpath(s) for s in source]
     mask = [[mask_dir[i].joinpath(s) for s in mask[i]] for i in range(len(mask))]
-    if not augmentor is None:
-        func = partial(get_radiomics_features, id_globber=id_globber, augmentor=augmentor)
-    else:
-        func = get_radiomics_features
+    func = partial(get_radiomics_features, id_globber=id_globber, augmentor=augmentor, **kwargs)
 
     r"""
     Multi-thread
@@ -311,16 +306,19 @@ class FeatureExtractor(object):
         >>> fe = FeatureExtractor()
 
     """
+    DEFAULT_NORM_STATE = Path(__file__).parent.joinpath("assets/t2wfs").resolve()
+
     def __init__(self, *, id_globber = "^[0-9a-zA-Z]+", idlist = None, param_file = None, **kwargs):
         super(FeatureExtractor, self).__init__()
         self.saved_state = {
             'param_file': None, # Path to param file
-            'norm_state_file': Path('../assets/t2wfs/'),    # Override in `extract_features_with_norm` if specified
+            'norm_state_file': FeatureExtractor.DEFAULT_NORM_STATE,    # Override in `extract_features_with_norm` if specified
             'norm_graph': None,
         }
         self.idlist = idlist
         self.param_file = param_file
         self.id_globber = id_globber
+        self.by_slice = -1
         self._extracted_features = None
         self._logger = MNTSLogger[__class__.__name__]
 
@@ -355,6 +353,7 @@ class FeatureExtractor(object):
         joblib.dump(self.saved_state, filename=f.with_suffix('.fe'))
 
     def save_features(self, outpath: Path):
+        outpath = Path(outpath).resolve()
         assert outpath.parent.is_dir(), f"Cannot save to: {outpath}"
         if outpath.suffix == '':
             outpath = outpath.with_suffix('.xlsx')
@@ -368,16 +367,18 @@ class FeatureExtractor(object):
                          im_path: Path,
                          seg_path: Path,
                          *args,
-                         id_globber: Optional[str] = "^[0-9a-zA-Z]+",
                          idlist: Optional[Iterable[str]] = None,
                          param_file: Optional[Path] = None,
-                         augmentor: Optional[Union[tio.Compose, Path]] = None) -> pd.DataFrame:
+                         augmentor: Optional[Union[tio.Compose, Path]] = None,
+                         by_slice: Optional[int] = None) -> pd.DataFrame:
         if param_file is None and self.saved_state['param_file'] is None:
             raise ArithmeticError("Please specify param file.")
         if param_file is None:
             param_file = self.saved_state['param_file']
         if idlist is None:
             idlist = self.idlist
+        if by_slice is None:
+            by_slice = self.by_slice
 
         # if param_file is not Path and a string, write contents to tempfile
         try:
@@ -391,7 +392,8 @@ class FeatureExtractor(object):
             tmp_param_file.flush()
             df = get_radiomics_features_from_folder(im_path, seg_path, Path(tmp_param_file.name), *args,
                                                     id_globber=self.id_globber,
-                                                    augmentor=augmentor, idlist=idlist)
+                                                    augmentor=augmentor, idlist=idlist,
+                                                    by_slice=by_slice)
 
         self._extracted_features = df.T
         if self._extracted_features.index.nlevels > 1:
@@ -403,7 +405,9 @@ class FeatureExtractor(object):
                                    seg_path: Path,
                                    *args,
                                    norm_state_file: Optional[Path] = None,
-                                   param_file: Optional[Path] = None) -> pd.DataFrame:
+                                   param_file: Optional[Path] = None,
+                                   by_slice: Optional[int] = -1,
+                                   **kwargs) -> pd.DataFrame:
         r"""
         This function normalize the image and segmentation and put them into a temporary folder, then call
         `extract_features()` to extract the radiomics feature.
@@ -414,6 +418,8 @@ class FeatureExtractor(object):
             param_file:
                 If specified, use this as the params for pyradiomics feature extraction and override the
                 `self.saved_state['param_file']` option.
+            by_slice:
+                See :func:`get_radiomics_features`
 
         """
         with tempfile.TemporaryDirectory() as temp_root_dir:
@@ -483,7 +489,8 @@ class FeatureExtractor(object):
             df = self.extract_features(Path(temp_dir_im).joinpath(ext_node_name),
                                        Path(temp_dir_seg[0]).joinpath(ext_node_name),
                                        *[Path(_p).joinpath(ext_node_name) for _p in temp_dir_seg[1:]],
-                                       param_file=param_file)
+                                       param_file=param_file,
+                                       *kwargs)
             _end_time = time.time()
             self._logger.info(f"Finished pyradiomics, time took: {_end_time - _start_time:.01f}s")
 
