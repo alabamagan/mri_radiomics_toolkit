@@ -231,10 +231,12 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
 
     Args:
         features_a:
-            Features extracted using segmentation set A
+            Features extracted using segmentation set A. The diagnostics will be dropped inplace if exist.
         features_b:
-            Features extracted using segmentation set B
+            Features extracted using segmentation set B, if this is None, some the ICC part will be skipped
         targets:
+            The ground-truth class. The column should be 'Status' and the rows will be the patients.
+            If the index of target patients and features patients are not the same, an error will be raised.
 
     Returns:
         Tuple of filtered features_a and features_b
@@ -273,17 +275,22 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
                                         ICC_form=ICC_form)
         feats_a = features_a.loc[_icc90_feats]
         feats_b = features_b.loc[_icc90_feats]
+    else:
+        feats_a = features_a.loc[var_feats_a_index]
+        feats_b = None
+
 
     # Filter out features with not enough t-test significance
     p_thres = .001
     logger.info(f"Dropping features using T-test with p-value: {p_thres}")
+    if len(feats_a.columns.difference(targets.index)) > 0:
+        msg = f"Differene between features and target detected: {feats_a.columns.difference(targets.index)}"
+        raise KeyError(msg)
     pvals_feats_a = T_test_filter(feats_a, targets)
     feats_a = feats_a.loc[(pvals_feats_a['pval'] < p_thres).index]
     if not features_b is None:
         pvals_feats_b = T_test_filter(feats_b, targets)
         feats_b = feats_a.loc[(pvals_feats_b['pval'] < p_thres).index]
-    else:
-        feats_b = None
 
     return feats_a, feats_b
 
