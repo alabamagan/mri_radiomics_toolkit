@@ -243,42 +243,50 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
 
     # Drop features known to be useless
     for features in [features_a, features_b]:
-        logger.info("Dropping 'Diganostics' column.")
-        features.drop('diagnostics', inplace=True)
+        try:
+            logger.info("Dropping 'Diganostics' column.")
+            features.drop('diagnostics', inplace=True)
+        except:
+            if features is not None:
+                logger.error("Diagnostics column not found or error occurs.")
 
     # Drop features with extremely low variance (i.e., most are same value)
     logger.info("Dropping features with low variance...")
     var_filter = skfs.VarianceThreshold(threshold=.95*(1-.95))
     var_feats_a = var_filter.fit_transform(features_a.T)
     var_feats_a_index = features_a.index[var_filter.get_support()]
-    var_feats_b = var_filter.fit_transform(features_b.T)
-    var_feats_b_index = features_b.index[var_filter.get_support()]
-    # Only those that fulfilled the variance threshold in both set of features are to be included
-    mutual_features = set(var_feats_a_index) & set(var_feats_b_index)
-    logger.info(f"{len(mutual_features)} features kept: \n{mutual_features}")
-    logger.info(f"{len(set(features_a.index) - set(mutual_features))} features discarded: \n"
-                f"{set(features_a.index) - set(mutual_features)}")
 
-    # Filter features by ICC
-    logger.info("Dropping features by their intra-observer segmentation ICC")
-    _icc90_feats = ICC_thres_filter(features_a.loc[mutual_features],
-                                    features_b.loc[mutual_features], 0.9,
-                                    ICC_form=ICC_form)
+    # if features_b is provided perform ICC filter
+    if features_b is not None:
+        var_feats_b = var_filter.fit_transform(features_b.T)
+        var_feats_b_index = features_b.index[var_filter.get_support()]
+        # Only those that fulfilled the variance threshold in both set of features are to be included
+        mutual_features = set(var_feats_a_index) & set(var_feats_b_index)
+        logger.info(f"{len(mutual_features)} features kept: \n{mutual_features}")
+        logger.info(f"{len(set(features_a.index) - set(mutual_features))} features discarded: \n"
+                    f"{set(features_a.index) - set(mutual_features)}")
+
+        # Filter features by ICC
+        logger.info("Dropping features by their intra-observer segmentation ICC")
+        _icc90_feats = ICC_thres_filter(features_a.loc[mutual_features],
+                                        features_b.loc[mutual_features], 0.9,
+                                        ICC_form=ICC_form)
 
     # Compute p-values of features
     icc90_feats_a = features_a.loc[_icc90_feats]
-    icc90_feats_b = features_b.loc[_icc90_feats]
-    #!! Temp, enable upper commented lines when done, the lower two line saves time by skipping ICC
-    # icc90_feats_a = features_a.loc[mutual_features]
-    # icc90_feats_b = features_b.loc[mutual_features]
+    if not features_b is None:
+        icc90_feats_b = features_b.loc[_icc90_feats]
 
     # Filter out features with not enough significance
     p_thres = .001
     logger.info(f"Dropping features using T-test with p-value: {p_thres}")
     pvals_feats_a = T_test_filter(icc90_feats_a, targets)
-    pvals_feats_b = T_test_filter(icc90_feats_b, targets)
     feats_a = icc90_feats_a.loc[(pvals_feats_a['pval'] < p_thres).index]
-    feats_b = icc90_feats_b.loc[(pvals_feats_b['pval'] < p_thres).index]
+    if not features_b is None:
+        pvals_feats_b = T_test_filter(icc90_feats_b, targets)
+        feats_b = icc90_feats_b.loc[(pvals_feats_b['pval'] < p_thres).index]
+    else:
+        feats_b = None
 
     return feats_a, feats_b
 
