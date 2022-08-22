@@ -112,6 +112,7 @@ def get_radiomics_features(fn: Path,
                 logger.warning(f"Detected differences in spacing! Resampling "
                                                          f"{_msk.GetSpacing()} -> {im.GetSpacing()}...")
                 filt = sitk.ResampleImageFilter()
+                filt.SetInterpolator(sitk.sitkNearestNeighbor)
                 filt.SetReferenceImage(im)
                 msk[i] = filt.Execute(_msk)
 
@@ -178,6 +179,7 @@ def get_radiomics_features(fn: Path,
                     assert by_slice <= _binmsk.GetDimension(), \
                         f"by_slice is larger than dimension: {_binmsk.GetDimension()}"
                     slice_cols = []
+                    case_number = re.search(id_globber, fn.name).group()
                     for j in range(_binmsk.GetSize()[by_slice]):
                         _index = [slice(None)] * by_slice + [j]
                         _slice_im = sitk.JoinSeries(im[_index])
@@ -191,7 +193,7 @@ def get_radiomics_features(fn: Path,
                         slice_df = pd.DataFrame.from_dict({k: (v.tolist() if hasattr(v, 'tolist') else str(v))
                                                      for k, v in _x.items()}, orient='index')
 
-                        _col_name = pd.MultiIndex.from_tuples([[f'{re.search(id_globber, fn.name).group()}',
+                        _col_name = pd.MultiIndex.from_tuples([[f'{case_number}',
                                                                 f'S{j}',
                                                                 f'C{val}']],
                                                               names=('Study number', 'Slice number', 'Class code'))
