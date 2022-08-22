@@ -271,20 +271,17 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
         _icc90_feats = ICC_thres_filter(features_a.loc[mutual_features],
                                         features_b.loc[mutual_features], 0.9,
                                         ICC_form=ICC_form)
+        feats_a = features_a.loc[_icc90_feats]
+        feats_b = features_b.loc[_icc90_feats]
 
-    # Compute p-values of features
-    icc90_feats_a = features_a.loc[_icc90_feats]
-    if not features_b is None:
-        icc90_feats_b = features_b.loc[_icc90_feats]
-
-    # Filter out features with not enough significance
+    # Filter out features with not enough t-test significance
     p_thres = .001
     logger.info(f"Dropping features using T-test with p-value: {p_thres}")
-    pvals_feats_a = T_test_filter(icc90_feats_a, targets)
-    feats_a = icc90_feats_a.loc[(pvals_feats_a['pval'] < p_thres).index]
+    pvals_feats_a = T_test_filter(feats_a, targets)
+    feats_a = feats_a.loc[(pvals_feats_a['pval'] < p_thres).index]
     if not features_b is None:
-        pvals_feats_b = T_test_filter(icc90_feats_b, targets)
-        feats_b = icc90_feats_b.loc[(pvals_feats_b['pval'] < p_thres).index]
+        pvals_feats_b = T_test_filter(feats_b, targets)
+        feats_b = feats_a.loc[(pvals_feats_b['pval'] < p_thres).index]
     else:
         feats_b = None
 
@@ -457,20 +454,7 @@ def features_selection(features_a: pd.DataFrame,
     logger = MNTSLogger['model_building']
 
     # Initial feature filtering using quantitative methods
-    if features_b is not None:
-        feats_a, feats_b = preliminary_feature_filtering(features_a, features_b, targets, ICC_form='ICC2k')
-    else:
-        # Just do variance filter and rop the useless columns
-        var_filter = skfs.VarianceThreshold(threshold=.95*(1-.95))
-        logger.info("Dropping 'Diganostics' column.")
-        feats_a = features_a.drop('diagnostics', inplace=False)
-
-        _ = var_filter.fit_transform(feats_a.T)
-        feats_index = feats_a.index[var_filter.get_support()]
-        logger.info(f"Features surviving var_filter: {feats_index}")
-        if not len(feats_index) == 0:
-            feats_a = feats_a.loc[feats_index]
-
+    feats_a, feats_b = preliminary_feature_filtering(features_a, features_b, targets, ICC_form='ICC2k')
 
     # Note: Because initial feature filtering relies on variance and ICC, it is not proper to normalize the data prior
     #       to this because it alters the mean and variance of the features.
