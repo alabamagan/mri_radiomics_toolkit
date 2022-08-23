@@ -644,7 +644,8 @@ class FeatureSelector(object):
             X_a (pd.DataFrame):
                 Radiomics features. Each row should be a datapoint, each column should be a feature.
             y (pd.DataFrame or pd.Series):
-                Class of the data.
+                Class of the data. Each row should be a datapoint for DataFrame. It should only have one value column
+                corresponding to the status of each patient.
             X_b (pd.DataFrame, Optional):
                 Radiomics features from another segmentation. Aims to filter away features that are susceptable to
                 to inter-observer changes in the segmentation. Default to None.
