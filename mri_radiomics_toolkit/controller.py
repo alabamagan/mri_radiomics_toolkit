@@ -1,7 +1,8 @@
-from typing import Optional
+from typing import Optional, Tuple
 from pathlib import Path
 from mnts.scripts.normalization import *
 from mnts.mnts_logger import MNTSLogger
+from ast import literal_eval
 
 import joblib
 import yaml
@@ -194,12 +195,26 @@ class Controller(object):
     def fit_df(self,
                df_a: pd.DataFrame,
                gt_df: pd.DataFrame,
-               df_b: Optional[pd.DataFrame] = None):
+               df_b: Optional[pd.DataFrame] = None,
+               **kwargs) -> Tuple[pd.DataFrame]:
         r"""
         This is a direct port of `selector.fit()`, and then `model_builder.fit()` The features should have the patients
         as rows and feature as columns. In other words, this function skips the extraction step.
+
+        Args:
+            df_a (pd.DataFrame):
+                Dataframe with patients as rows and features as columns.
+            gt_df (pd.DataFrame):
+                Dataframe with patients as row and at least a column "Status"
+            df_b (pd.DataFrame, Optional):
+                If provided and features have not been selected, feature selection would be carried out based on the
+                setting in the controller setting yml file. Note that it could take hours to finish the feature
+                selection. The dataframe should have patients as rows and features as columns.
+            **kwargs:
+                These will be passed eventually to :func:`model_building.cv_grid_search`. See that function for more.
+
         """
-        if self.extractor.param_file is None:
+        if self.extractor.param_file is None and self.selected_features is None:
             raise AttributeError("Please set the pyradiomics parameter file first.")
 
         overlap_index = set(df_a.index) & set(gt_df.index)
@@ -209,11 +224,24 @@ class Controller(object):
 
         self._logger.debug(f"df_a:\n {df_a.to_string()}")
         self._logger.debug(f"gt_df:\n {gt_df.to_string()}")
-        feats_a, feats_b = self.selector.fit(df_a.loc[overlap_index],
-                                             gt_df.loc[overlap_index],
-                                             X_b=df_b)
 
-        results, predict_table = self.model_builder.fit(feats_a, gt_df.loc[overlap_index])
+        # if features are not selected yet
+        if self.selected_features is None:
+            feats_a, feats_b = self.selector.fit(df_a.loc[overlap_index],
+                                                 gt_df.loc[overlap_index],
+                                                 X_b=df_b)
+        else:
+            if not df_b is None:
+                self._logger.warning("Received `df_b` input but features are already selected. Ignoring `df_b`")
+            try:
+                feats_a = df_a[self.selected_features]
+            except KeyError as e:
+                msg = f"Some keys of the selected features is not in `df_a` or `df_b`: \n" \
+                      f"{self.selected_features.difference(df_a.columns)}"
+                raise KeyError(msg)
+
+        results, predict_table = self.model_builder.fit(feats_a, gt_df.loc[overlap_index],
+                                                        **kwargs)
         self.saved_state['predict_ready'] = True
         return results, predict_table
 

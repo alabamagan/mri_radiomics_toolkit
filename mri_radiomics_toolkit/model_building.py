@@ -26,7 +26,8 @@ def cv_grid_search(train_features: pd.DataFrame,
                    train_targets: pd.DataFrame,
                    test_features: Optional[pd.DataFrame] = None,
                    test_targets: Optional[pd.DataFrame] = None,
-                   verbose=False) -> List[Union[pd.DataFrame, Dict]]:
+                   verbose: Optional[bool] = False,
+                   classifiers: Optional[str] = None) -> List[Union[pd.DataFrame, Dict]]:
     r"""
     Grid search for best hyper-parameters for the following linear models:
       * SVM
@@ -43,8 +44,14 @@ def cv_grid_search(train_features: pd.DataFrame,
             Input training ground-truth. Should only have one column and each row should be one sample.
         test_features (pd.DataFrame, Optional):
             Input testing features. Columns and rows should be features and sample respectively. Default to None.
-        test_targets:
+        test_targets (pd.DataFrame, Optional):
             Input testing ground-truth. Default to None.
+        verbose (bool, Optional):
+            Deprecated.
+        classifiers (str, Optional):
+            This can be one of the keys of `param_grid_dict`: ['Support Vector Regression'|'Elastic Net'|'Logistic
+            Regression'|'Random Forest'|'Perceptron'|'KNN']. If specified, only that method will be trained. Default
+            to None
 
     Returns:
         best_params (dict):
@@ -62,6 +69,10 @@ def cv_grid_search(train_features: pd.DataFrame,
         ('standardization', preprocessing.StandardScaler()),
         ('classification', 'passthrough')
     ])
+
+    if verbose:
+        raise DeprecationWarning(f"This option is deprecated.")
+
 
     # Construct tests to perform
     param_grid_dict = {
@@ -102,6 +113,18 @@ def cv_grid_search(train_features: pd.DataFrame,
             'classification__n_neighbors': [3, 5, 10, 20],
         }
     }
+
+    if not classifiers is None:
+        if not isinstance(classifiers, (list, tuple, str)):
+            raise TypeError(f"classifiers must be a list, a tuple or a string, got {type(classifiers)} instead.")
+        if isinstance(classifiers, str):
+            classifiers = [classifiers]
+        param_keys = list(param_grid_dict.keys())
+        for key in param_keys:
+            if key not in classifiers:
+                param_grid_dict.pop(key)
+        if len(param_grid_dict) == 0:
+            raise ArithmeticError("No classifiers were selected for model building.")
 
     best_params = {}
     best_estimators = {}
@@ -152,7 +175,7 @@ def model_building_(train_features: pd.DataFrame,
     Args:
         See :func:`cv_grid_search`
     """
-
+    raise NotImplementedError("This function shouldn't be used")
     #TODO: This function is not finished and require adding standard scalar here.
     logger = MNTSLogger['model-building']
     models = {
@@ -232,7 +255,8 @@ class ModelBuilder(object):
             train_features: pd.DataFrame,
             train_targets: pd.DataFrame,
             test_features: pd.DataFrame = None,
-            test_targets: pd.DataFrame = None) -> Tuple[pd.DataFrame]:
+            test_targets: pd.DataFrame = None,
+            **kwargs) -> Tuple[pd.DataFrame]:
         if not self.check_dimension(train_features, train_targets):
             # Try to match dimensions for convenience
             self._logger.warning("Miss-match found for train data.")
@@ -245,7 +269,8 @@ class ModelBuilder(object):
                                                                               train_targets,
                                                                               test_features,
                                                                               test_targets,
-                                                                              verbose=self.verbose)
+                                                                              verbose=self.verbose,
+                                                                              **kwargs)
         self.saved_state['estimators'] = best_estimators
         self.saved_state['best_params'] = best_params
         return results, predict_table
