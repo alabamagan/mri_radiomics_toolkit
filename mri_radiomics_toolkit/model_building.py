@@ -289,6 +289,19 @@ class ModelBuilder(object):
             test_targets: pd.DataFrame = None,
             **kwargs) -> Tuple[pd.Series, pd.DataFrame]:
         r"""Fit the estimator with the best performance"""
+        # if there are differences in the saved state and the requested classifiers
+        if kwargs.get("classifiers", None) is not None and self.saved_state['estimators'] is not None:
+            if isinstance(kwargs['classifiers'], str):
+                if kwargs["classifiers"] not in self.saved_state['estimators']:
+                    self._logger.warning(f"Requested classifier is not in saved state, running cv_fit again.")
+                    self.saved_state['estimators'] = None
+                    self.saved_state['best_params'] = None
+            elif isinstance(kwargs['classifiers'], (list, tuple)):
+                if len(list(set(kwargs['classifiers']) - set(self.saved_state['estimator'].keys()))) != 0:
+                    self._logger.warning(f"Requested classifier mismatch with saved state, running cv_fit again.")
+                    self.saved_state['estimators'] = None
+                    self.saved_state['best_params'] = None
+
         if self.saved_state['estimators'] is None or self.saved_state['best_params'] is None:
             return self.cv_fit(train_features, train_targets, test_features, test_targets, **kwargs)
         else:
@@ -303,10 +316,10 @@ class ModelBuilder(object):
                 if not (test_features is None or test_targets is None):
                     y = estimator.predict(test_features.values)
                     train_y = estimator.predict(train_features.values)
-                    train_score = metrics.roc_auc_score(train_targets.values.ravel(),
-                                                        train_y)
-                    test_score = metrics.roc_auc_score(test_targets.values.ravel(),
-                                                       y)
+                    train_score = metrics.roc_auc_score(y_true=train_targets.values.ravel(),
+                                                        y_score=train_y)
+                    test_score = metrics.roc_auc_score(y_true=test_targets.values.ravel(),
+                                                       y_score=y)
                     results[f'{key}'] = test_score
                     results[f'{key} (train)'] = train_score
                     predict_table.append(pd.Series(y, index=test_targets.index, name=f"{key}"))
