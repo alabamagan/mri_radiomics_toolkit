@@ -27,7 +27,7 @@ def cv_grid_search(train_features: pd.DataFrame,
                    test_features: Optional[pd.DataFrame] = None,
                    test_targets: Optional[pd.DataFrame] = None,
                    verbose: Optional[bool] = False,
-                   classifiers: Optional[str] = None) -> List[Union[pd.DataFrame, Dict]]:
+                   classifiers: Optional[str] = None) -> List[Union[pd.DataFrame, pd.Series]]:
     r"""
     Grid search for best hyper-parameters for the following linear models:
       * SVM
@@ -78,9 +78,9 @@ def cv_grid_search(train_features: pd.DataFrame,
     param_grid_dict = {
         'Support Vector Regression': {
             'classification': [svm.SVR(tol=1E-4, max_iter=-1)],
-            'classification__kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
-            'classification__C': [1, 10, 100, 1000],
-            'classification__degree': [3, 5, 7, 9],
+            'classification__kernel': ['linear', 'poly', 'rbf'],
+            'classification__C': [1, 100, 1000],
+            'classification__degree': [3, 5, 7],
             'classification__epsilon': [1, 0.1, 0.01]
         },
         'Elastic Net': {
@@ -161,6 +161,7 @@ def cv_grid_search(train_features: pd.DataFrame,
         predict_table = pd.concat(predict_table, axis=1)
     else:
         predict_table = pd.DataFrame() # Return empty dataframe if something went wrong
+    results = pd.Series(results)
     return best_params, results, predict_table, best_estimators
 
 
@@ -251,12 +252,18 @@ class ModelBuilder(object):
             raise ArithmeticError("There are nothing to save.")
         joblib.dump(self.saved_state, filename=f.with_suffix('.pkl'))
 
-    def fit(self,
-            train_features: pd.DataFrame,
-            train_targets: pd.DataFrame,
-            test_features: pd.DataFrame = None,
-            test_targets: pd.DataFrame = None,
-            **kwargs) -> Tuple[pd.DataFrame]:
+    def cv_fit(self,
+               train_features: pd.DataFrame,
+               train_targets: pd.DataFrame,
+               test_features: pd.DataFrame = None,
+               test_targets: pd.DataFrame = None,
+               **kwargs) -> Tuple[pd.Series, pd.DataFrame]:
+        r"""
+        Perform cv_grid search to determine the best estimator and the best hyper-parameters
+
+        Args:
+            See :func:`cv_grid_search` for more.
+        """
         if not self.check_dimension(train_features, train_targets):
             # Try to match dimensions for convenience
             self._logger.warning("Miss-match found for train data.")
@@ -274,6 +281,38 @@ class ModelBuilder(object):
         self.saved_state['estimators'] = best_estimators
         self.saved_state['best_params'] = best_params
         return results, predict_table
+
+    def fit(self,
+            train_features: pd.DataFrame,
+            train_targets: pd.DataFrame,
+            test_features: pd.DataFrame = None,
+            test_targets: pd.DataFrame = None,
+            **kwargs) -> Tuple[pd.Series, pd.DataFrame]:
+        r"""Fit the estimator with the best performance"""
+        if self.saved_state['estimators'] is None or self.saved_state['best_params'] is None:
+            return self.cv_fit(train_features, train_targets, test_features, test_targets, **kwargs)
+        else:
+            self._logger.info("Found trained parameters and estimators, fitting them again...")
+            best_params = self.saved_state['best_params']
+            best_estimators = self.saved_state['estimators']
+
+            results = {}
+            predict_table = [test_targets]
+            for key, estimator in best_estimators.items():
+                estimator.fit(train_features, train_targets.values.ravel())
+                if not (test_features is None or test_targets is None):
+                    y = estimator.predict(test_features.values)
+                    train_y = estimator.predict(train_features.values)
+                    train_score = metrics.roc_auc_score(train_targets.values.ravel(),
+                                                        train_y)
+                    test_score = metrics.roc_auc_score(test_targets.values.ravel(),
+                                                       y)
+                    results[f'{key}'] = test_score
+                    results[f'{key} (train)'] = train_score
+                    predict_table.append(pd.Series(y, index=test_targets.index, name=f"{key}"))
+            predict_table = pd.concat(predict_table, axis=1)
+            results = pd.Series(results)
+            return results, predict_table
 
     def predict(self, features: pd.DataFrame) -> pd.DataFrame:
         r"""
