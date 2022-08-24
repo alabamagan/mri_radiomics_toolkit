@@ -214,7 +214,7 @@ class Controller(object):
                 These will be passed eventually to :func:`model_building.cv_grid_search`. See that function for more.
 
         """
-        if self.extractor.param_file is None and self.selected_features is None:
+        if (self.extractor.param_file is None) and (self.selected_features is None):
             raise AttributeError("Please set the pyradiomics parameter file first.")
 
         overlap_index = set(df_a.index) & set(gt_df.index)
@@ -240,7 +240,7 @@ class Controller(object):
                       f"{self.selected_features.difference(df_a.columns)}"
                 raise KeyError(msg)
 
-        results, predict_table = self.model_builder.fit(feats_a, gt_df.loc[overlap_index],
+        results, predict_table = self.model_builder.fit(feats_a.loc[overlap_index], gt_df.loc[overlap_index],
                                                         **kwargs)
         self.saved_state['predict_ready'] = True
         return results, predict_table
