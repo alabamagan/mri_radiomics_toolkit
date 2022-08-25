@@ -33,9 +33,9 @@ def time_feature_selection():
     with MNTSLogger('./01_feature_selection_stability.log', keep_file=True, verbose=True, log_level='debug') as logger:
         logger.info("{:=^100s}".format(f" Testing time required for feature selection "))
         p_setting = Path("01_configs/C3_BBRENT.yml")
-        p_feature_1 = Path("../samples/samples_feat_1st.xlsx")
-        p_feature_2 = Path("../samples/samples_feat_2nd.xlsx")
-        p_gt = Path("../samples/sample_datasheet.csv")
+        p_feature_1 = Path("../test/test_data/assets/samples_feat_1st.xlsx")
+        p_feature_2 = Path("../test/test_data/assets/samples_feat_2nd.xlsx")
+        p_gt = Path("../test/test_data/assets/sample_datasheet.csv")
 
         feat_set_1 = pd.read_excel(str(p_feature_1), index_col=[0, 1, 2]).T
         feat_set_2 = pd.read_excel(str(p_feature_2), index_col=[0, 1, 2]).T
@@ -85,7 +85,7 @@ def validate_feature_selection_stability(clt_setting_path: Path,
         logger.info("{:=^100s}".format(" Validation - feature selection stability "))
 
         p_setting = Path(clt_setting_path)
-        p_gt = Path("../samples/sample_datasheet.csv")
+        p_gt = Path("../test/test_data/assets/sample_datasheet.csv")
         p_out = Path(out_path)
         logger.info(f"Results are written to {str(p_out)}")
 
