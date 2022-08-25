@@ -4,11 +4,6 @@ imageType:
     lbp2DRadius: 0.9
     lbp2DMethod: 'default'
     force2D: True
-  LBP3D:
-    lbp3DIcosphereRadius : 0.9
-  LoG:
-    sigma: [0.4492]
-  Gradient: {}
   Exponential: {}
 
 featureClass:
@@ -25,10 +20,8 @@ featureClass:
     - Uniformity
     - Variance
   shape:
-  glcm:
-  glrlm:
 
 setting:
-  resampledPixelSpacing: [2, 2, 2]
+  resampledPixelSpacing: [2, 2, 0]
   binWidth: 1
   preCrop: True
