@@ -298,7 +298,11 @@ class Controller(object):
         if not isinstance(d, dict):
             raise TypeError("State loaded is incorrect!")
         self.saved_state.update(d)
-        self.read_setting(Path(self.saved_state['setting']))
+        if not 'setting_file_stream' in self.saved_state:
+            self.read_setting(Path(self.saved_state['setting']))
+        else:
+            # Read from saved file stream if possible
+            self.read_setting(None)
 
         #TODO: write checks for each of the modules and make sure all are ready for inference.
         # note that for FE `with_norm` more checks are needed.
