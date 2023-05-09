@@ -18,7 +18,7 @@ import argparse
 global id_globber
 
 # Defaults
-default_pyrad_paramfile = Path(__file__).joinpath('../pyradiomics_setting/pyradiomics_setting-v3.yml')
+default_pyrad_paramfile = Path(__file__).joinpath('../../pyradiomics_setting/pyradiomics_setting-v3.yml')
 
 def main():
     parser = argparse.ArgumentParser()
@@ -43,11 +43,12 @@ def main():
     args = parser.parse_args()
 
     try:
-        im_path, seg_path, param_file = [Path(getattr(args, p)) for p in ['img_dir', 'seg_dir', 'param_file']]
-        for p in [im_path, seg_path]:
+        img_path, seg_path, param_file = [Path(getattr(args, p)).resolve()
+                                          for p in ['img_dir', 'seg_dir', 'param_file']]
+        for p in [img_path, seg_path]:
             if not p.is_dir():
                 raise IOError(f"Cannot open file: {str(p.resolve())}")
-        if not param_file.is_file():
+        if not param_file.resolve().is_file():
             raise IOError(f"Cannot open param file: {str(param_file.resolve())}")
 
         NORM_FLAG = args.with_norm is not None
@@ -80,6 +81,27 @@ def main():
                 idlist = [r.rstrip() for r in idlist_file.open('r').readlines()]
         elif isinstance(args.id_list, (list, tuple)):
             idlist = [str(x) for x in args.id_list]
+        elif args.id_list is None:
+            # Matches image and seg files, use glob instead of rglob
+            seg_files = seg_path.glob("*nii.gz")
+            img_files = img_path.glob("*nii.gz")
+            seg_ids = [re.search(args.id_globber, f.name) for f in seg_files]
+            seg_ids = [mo.group() for mo in seg_ids if mo is not None]
+            img_ids = [re.search(args.id_globber, f.name) for f in img_files]
+            img_ids = [mo.group() for mo in img_ids if mo is not None]
+
+            seg_missing_ids = list(set(img_ids) - set(seg_ids))
+            img_missing_ids = list(set(seg_ids) - set(img_ids))
+            if not len(seg_missing_ids) == 0:
+                seg_missing_ids.sort()
+                msg = f"IDs missing in segmentation dir: {pformat(','.join(seg_missing_ids), width=80)}"
+                logger.warning(msg)
+            if not len(seg_missing_ids) == 0:
+                img_missing_ids.sort()
+
+                msg = f"IDs missing in image dir: {pformat(','.join(img_missing_ids), width=80)}"
+                logger.warning(msg)
+            idlist = list(set(img_ids).intersection(set(seg_ids)))
         else:
             idlist = [r for r in args.id_list.split(',')]
 
@@ -93,9 +115,9 @@ def main():
             outpath = outpath.join('extracted_features.xlsx')
 
         if NORM_FLAG:
-            df = fe.extract_features_with_norm(im_path, seg_path, param_file=param_file, norm_state_file=norm_file_path)
+            df = fe.extract_features_with_norm(img_path, seg_path, param_file=param_file, norm_state_file=norm_file_path)
         else:
-            df = fe.extract_features(im_path, seg_path, param_file=param_file)
+            df = fe.extract_features(img_path, seg_path, param_file=param_file)
 
         if outpath.suffix == '.xlsx' or outpath.suffix is None:
             df.to_excel(str(outpath.with_suffix('.xlsx').resolve()))
