@@ -1,9 +1,9 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+from mnts.mnts_logger import MNTSLogger
 from sklearn import *
 from sklearn.model_selection import *
-import numpy as np
-import matplotlib.pyplot as plt
-from mnts.mnts_logger import MNTSLogger
-import pandas as pd
+
 
 def plot_performance_vs_hyperparams(clf,
                                     param_grid,

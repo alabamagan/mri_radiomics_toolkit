@@ -1,26 +1,14 @@
-import mnts.mnts_logger
-import pandas as pd
-import pingouin as pg
-
 from pathlib import Path
-
-import sklearn.preprocessing
-from mnts.mnts_logger import MNTSLogger
-from tqdm.auto import *
-from typing import Union, Optional, Iterable, List, Callable, Tuple, Dict
-
-from sklearn.model_selection import *
-from sklearn import *
-from scipy.stats import *
+from typing import List, Optional, Tuple, Union
 
 import joblib
-import numpy as np
-import multiprocessing as mpi
-from tqdm.auto import *
-from functools import partial
-from RENT import RENT, stability
+import pandas as pd
+from mnts.mnts_logger import MNTSLogger
+from sklearn import *
+from sklearn.model_selection import *
 
 __all__ = ['cv_grid_search', 'model_building_', 'ModelBuilder']
+
 
 def cv_grid_search(train_features: pd.DataFrame,
                    train_targets: pd.DataFrame,
@@ -72,7 +60,6 @@ def cv_grid_search(train_features: pd.DataFrame,
 
     if verbose:
         raise DeprecationWarning(f"This option is deprecated.")
-
 
     # Construct tests to perform
     param_grid_dict = {
@@ -160,7 +147,7 @@ def cv_grid_search(train_features: pd.DataFrame,
     if not test_targets is None and not test_features is None:
         predict_table = pd.concat(predict_table, axis=1)
     else:
-        predict_table = pd.DataFrame() # Return empty dataframe if something went wrong
+        predict_table = pd.DataFrame()  # Return empty dataframe if something went wrong
     results = pd.Series(results)
     return best_params, results, predict_table, best_estimators
 
@@ -177,18 +164,18 @@ def model_building_(train_features: pd.DataFrame,
         See :func:`cv_grid_search`
     """
     raise NotImplementedError("This function shouldn't be used")
-    #TODO: This function is not finished and require adding standard scalar here.
+    # TODO: This function is not finished and require adding standard scalar here.
     logger = MNTSLogger['model-building']
     models = {
         'Logistic Regression': linear_model.LogisticRegression(penalty='elasticnet',
                                                                solver='saga',
-                                                               C = 1/.02,
-                                                               l1_ratio = .5,
+                                                               C=1 / .02,
+                                                               l1_ratio=.5,
                                                                max_iter=3000,
                                                                verbose=True),
         'Support Vector Regression': svm.SVR(kernel='linear',
                                              tol=5E-4,
-                                             C = 10,
+                                             C=10,
                                              epsilon=0.01,
                                              max_iter=3000,
                                              verbose=True),
@@ -202,7 +189,7 @@ def model_building_(train_features: pd.DataFrame,
                                                   verbose=True),
         'Boosted SVM': ensemble.AdaBoostRegressor(svm.SVR(kernel='linear',
                                                           tol=5E-4,
-                                                          C = 10,
+                                                          C=10,
                                                           epsilon=0.01,
                                                           max_iter=3000),
                                                   n_estimators=50)
@@ -224,6 +211,7 @@ def model_building_(train_features: pd.DataFrame,
         logger.info(f"Done for {key}.")
 
     return models, results
+
 
 class ModelBuilder(object):
     def __init__(self, *args, verbose=False, **kwargs):

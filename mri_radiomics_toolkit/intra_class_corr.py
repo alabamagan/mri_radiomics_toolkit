@@ -7,10 +7,9 @@ References:
 
 import numpy as np
 import pandas as pd
-from scipy.stats import f
 from pingouin.config import options
 from pingouin.utils import _postprocess_dataframe
-
+from scipy.stats import f
 
 __all__ = ["cronbach_alpha", "intraclass_corr"]
 

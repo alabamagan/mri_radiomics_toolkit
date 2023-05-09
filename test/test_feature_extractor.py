@@ -1,10 +1,11 @@
 import unittest
-from pathlib import Path
-from mri_radiomics_toolkit.feature_extractor import get_radiomics_features, \
-    get_radiomics_features_from_folder
-from mnts.mnts_logger import MNTSLogger
 import pandas as pd
 import radiomics
+from pathlib import Path
+
+from mnts.mnts_logger import MNTSLogger
+from mri_radiomics_toolkit.feature_extractor import get_radiomics_features, \
+    get_radiomics_features_from_folder
 
 
 
@@ -16,7 +17,6 @@ class Test_feature_extractor(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.cls_logger = MNTSLogger(".", "Test_FE", verbose=True, keep_file=False, log_level='debug')
         # hijack radiomics logger
-        import radiomics
         radiomics.setVerbosity(20) # INFO
         radiomics.logger = MNTSLogger['radiomics']
 

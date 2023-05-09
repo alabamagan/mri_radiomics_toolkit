@@ -11,10 +11,11 @@ Nogueira, S., Sechidis, K., & Brown, G. (2017). On the stability of feature sele
 
 '''
 
+from typing import Any, Iterable, Optional
+
+import math
 import numpy as np
 from scipy.stats import norm
-from typing import Optional, Any, Iterable
-import math
 
 __all__ = ['getStability', 'getVarianceofStability', 'confidenceIntervals', 'hypothesisTestT', 'hypothesisTestV',
            'feat_list_to_binary_mat', 'jaccard_mean']

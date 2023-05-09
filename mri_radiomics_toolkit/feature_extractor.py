@@ -1,28 +1,26 @@
 import multiprocessing as mpi
-import re
 import os
-import tempfile
-import zipfile
 import pprint
+import re
+import tempfile
 import time
-from pathlib import Path
-from typing import Optional, Union, Sequence, Iterable
-from zipfile import ZipFile, ZIP_DEFLATED
-from io import BytesIO
 from functools import partial
+from io import BytesIO
+from pathlib import Path
+from typing import Iterable, Optional, Sequence, Union
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import SimpleITK as sitk
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
-import torchio as tio
 import torch
-
-from mnts.scripts.normalization import run_graph_inference
-from mnts.mnts_logger import MNTSLogger
-from mnts.utils import get_unique_IDs, load_supervised_pair_by_IDs, repeat_zip
+import torchio as tio
 from mnts.filters import MNTSFilterGraph
-from radiomics import featureextractor, setVerbosity
+from mnts.mnts_logger import MNTSLogger
+from mnts.scripts.normalization import run_graph_inference
+from mnts.utils import get_unique_IDs, load_supervised_pair_by_IDs, repeat_zip
+from radiomics import featureextractor
 
 # Fix logger
 
