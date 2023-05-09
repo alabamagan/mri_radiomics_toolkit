@@ -25,7 +25,7 @@ class Test_pipeline(unittest.TestCase):
         cls.cls_logger.cleanup()
         
     def setUp(self) -> None:
-        self._logger = Test_pipeline.cls_logger
+        self._logger = MNTSLogger[unittest]
         self._globber = "^[0-9]+"
         self._p_setting = Path('test_data/assets/sample_pyrad_settings.yml')
         self.temp_dir_obj = tempfile.TemporaryDirectory()
@@ -175,7 +175,7 @@ class Test_pipeline(unittest.TestCase):
         features_b = pd.read_excel(str(p_feat_b), index_col=[0, 1, 2]).T
         gt = pd.read_csv(str(p_gt), index_col=0)
 
-        cases = set(features_a.index) & set(gt.index)
+        cases = list(set(features_a.index) & set(gt.index))
         gt = gt.loc[cases]
 
         passed = False
@@ -200,7 +200,7 @@ class Test_pipeline(unittest.TestCase):
 
             # Test two segmentation
             self._logger.info("{:-^50s}".format(" Testing pair feature set "))
-            cases = set(features_a.index) & set(features_b.index) & set(gt.index)
+            cases = list(set(features_a.index) & set(features_b.index) & set(gt.index))
             try:
                 feats = fs.fit(features_a.loc[cases], gt.loc[cases], features_b.loc[cases])
                 test_result['Two paired feature sets'] = "Passed"
@@ -257,7 +257,7 @@ class Test_pipeline(unittest.TestCase):
 
         features = pd.read_excel(str(p_feat_a), index_col=[0, 1, 2]).T
         gt = pd.read_csv(str(p_gt), index_col=0)
-        cases = set(features.index) & set(gt.index)
+        cases = list(set(features.index) & set(gt.index))
         gt = gt.loc[cases]
         features = features.loc[cases]
 

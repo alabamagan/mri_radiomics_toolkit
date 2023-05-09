@@ -177,7 +177,8 @@ class Controller(object):
         overlap_index = set(df_a.index) & set(gt_df.index)
         if df_b is not None:
             overlap_index = overlap_index & set(df_b.index)
-            df_b = df_b.loc[overlap_index]
+            df_b = df_b.loc[list(overlap_index)] # pandas doesn't allow using set as indexers
+        overlap_index = list(overlap_index)
 
         self._logger.debug(f"df_a:\n {df_a.to_string()}")
         self._logger.debug(f"gt_df:\n {gt_df.to_string()}")

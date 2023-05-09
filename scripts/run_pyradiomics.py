@@ -17,14 +17,16 @@ import argparse
 # Fix logger
 global id_globber
 
+# Defaults
+default_pyrad_paramfile = Path(__file__).joinpath('../pyradiomics_setting/pyradiomics_setting-v3.yml')
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--img-dir', action='store', type=Path,
                         help="Directory to image files.")
     parser.add_argument('-s', '--seg-dir', action='store', type=Path,
                         help='Directory to segmentation files.')
-    parser.add_argument('-p', '--param-file', action='store', type=Path, default=Path(
-        '../pyradiomics_setting/pyradiomics_setting-v2.yml'),
+    parser.add_argument('-p', '--param-file', action='store', type=Path, default=default_pyrad_paramfile,
                         help='Path to the pyradiomics settings.')
     parser.add_argument('-f', '--with-norm', action='store', type=Path, default=None,
                         help="If specified path to a normalization state-dir, extract_feature_with_norm will be called.")
