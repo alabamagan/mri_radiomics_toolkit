@@ -2,6 +2,7 @@ import pprint
 from pathlib import Path
 from typing import Optional, Tuple
 
+from io import StringIO
 import joblib
 import pandas as pd
 import yaml
@@ -89,10 +90,21 @@ class Controller(object):
                 return_freq
                 boosting
         """
-        f = Path(f)
-        with f.open('r') as stream:
-            self._logger.info(f"Reading from file: {str(f)}")
-            data_loaded = yaml.safe_load(stream)
+        if not f is None:
+            f = Path(f)
+            with f.open('r') as stream:
+                self._logger.info(f"Reading from file: {str(f)}")
+                data_loaded = yaml.safe_load(stream)
+                # Read it to saved_state
+                stream.seek(0)
+                self.saved_state['setting_file_stream'] = stream.read()
+        else:
+            if self.saved_state.get('setting_file_stream', None) is None:
+                msg = "Nothing is provided to read."
+                raise FileNotFoundError(msg)
+            else:
+                with StringIO(self.saved_state['setting_file_stream']) as stream:
+                    data_loaded = yaml.safe_load(stream)
 
         if 'Selector' in data_loaded.keys():
             _s = data_loaded['Selector']
@@ -107,10 +119,12 @@ class Controller(object):
             self.extractor.id_globber = id_globber
             self._logger.info(f"Updating extractor setting: {id_globber}")
             param_file = _s.get('pyrad_param_file', None)
-            self._logger.info(f">>>>{param_file}")
             if not param_file is None:
                 self.extractor.param_file = param_file  # the extractor handles it itself
                 self.saved_state['pyrad_param_file'] = self.extractor.param_file
+            else:
+                msg = "No pyrad param file was found in saved state."
+                self._logger.warning(msg)
 
         if 'Controller' in data_loaded.keys():
             _s = data_loaded['Controller']
