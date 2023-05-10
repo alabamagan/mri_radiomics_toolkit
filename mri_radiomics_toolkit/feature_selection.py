@@ -2,6 +2,7 @@ import multiprocessing as mpi
 import numpy as np
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, Union, Iterable
+from functools import partial
 
 import joblib
 import pandas as pd
@@ -108,21 +109,30 @@ def compute_ICC(featset_A: pd.DataFrame,
     # Compute ICC of features
     outted_features = []    # TODO: depricate this
     feature_names = list(set(df.index))
-    icc_df = pd.DataFrame()
+    icc_df = []
     pool = mpi.Pool(mpi.cpu_count())
     res = pool.starmap_async(partial(pg.intraclass_corr, targets='Patient', raters='Segmentation', ratings='value'),
                              [[df.loc[f]] for f in feature_names])
     pool.close()
     pool.join()
-
     results = res.get()
+    # #! DEBUG
+    # results = []
+    # for f in feature_names:
+    #     icc = pg.intraclass_corr(df.loc[f], targets='Patient', raters='Segmentation', ratings='value')
+    #     results.append(icc)
+    #     if len(results) > 20:
+    #         break
+
+
     for i, f in enumerate(tqdm(results)):
         logger.info(f"Computing: {feature_names[i]}")
         icc = f
         icc['Feature_Name'] = feature_names[i]
         icc.set_index('Feature_Name', inplace=True)
         icc.set_index('Type', append=True, inplace=True)
-        icc_df = icc_df.append(icc)
+        icc_df.append(icc)
+    icc_df = pd.concat(icc_df, axis=0)
 
     drop_this = ["ICC1", "ICC2", "ICC3", "ICC1k", "ICC2k", "ICC3k"]
     if not ICC_form in drop_this:
@@ -143,10 +153,20 @@ def compute_ICC(featset_A: pd.DataFrame,
 def filter_features_by_ICC_thres(featset_A: pd.DataFrame,
                                  featset_B: pd.DataFrame,
                                  ICC_threshold: Optional[float] = 0.9,
-                                 ICC_form: Optional[str] = 'ICC2k') -> pd.DataFrame:
+                                 ICC_form: Optional[str] = 'ICC2k') -> pd.MultiIndex:
     r"""
-    Wrapper function for convinience
+    Wrapper function for convenience
     `featset_A/B` columns should be patient identifiers, and rows should be features.
+
+    Args:
+        featset_A (pd.DataFrame):
+            Dataframe that contains features computed and to be compared with the other set `featset_B`.
+        featset_B (pd.DataFrame):
+            Dataframe that should have the exact same row indices as `featset_A`.
+
+    Retruns:
+        pd.MultiIndex:
+            Index of features that passed the ICC threshold.
     """
     ICCs = compute_ICC(featset_A, featset_B, ICC_form=ICC_form)[0]
     ICCs = ICCs.loc[ICCs['ICC'] >= 0.9].index
@@ -194,10 +214,10 @@ def filter_features_by_T_test(features: pd.DataFrame,
 
         _is_norm = pval > .05
         if _is_norm:
-            t_pval = float(pg.ttest(_f_A, _f_B)['p-val'])
+            t_pval = pg.ttest(_f_A, _f_B)['p-val'].astype('float')
             test_name = 'Student t-test'
         else:
-            t_pval = float(pg.mwu(_f_A, _f_B)['p-val'])
+            t_pval = pg.mwu(_f_A, _f_B)['p-val'].astype('float')
             test_name = 'Mann-Whitney U'
 
         s = pd.DataFrame([[test_name, t_pval]], columns=['test', 'pval'])
