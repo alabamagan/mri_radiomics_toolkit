@@ -15,7 +15,7 @@ This repo is a python toolkit written to run radiomics analysis in a pipeline. T
 
 In addition, this repo introduces a feature selection technique combing boosting and bagging together with RENT, a previously proposed technique to improve feature stability. (Figure 1)
 
- ![Stability of feature selection improved](./img/Stability.png)
+![Stability of feature selection improved](./img/Stability.png)
 
 # Installation
 
@@ -45,8 +45,6 @@ cd ../..
 pip install .
 ```
 
-
-
 # Usage
 
 ## Feature extractor
@@ -59,7 +57,7 @@ pip install .
 * Write extracted features into formatted excel
 * Allow augmentation of data before feature extraction
 
-### Usage
+### Usage (API)
 
 ```python
 from mri_radiomics_toolkit import *
@@ -76,6 +74,53 @@ fe.save_features("saveout.xlsx") # write results here, columns are the cases
 fe.save("extractor_state.fe") # for using this directly during inference
 ```
 
+### Usage (Console)
+
+An entry point for the script `scripts/run_pyradiomics.py` can be accessed through the command `mradtk-extract-features`
+
+```bash
+usage: mradtk-extract-features [-h] [-i IMG_DIR] [-s SEG_DIR] [-p PARAM_FILE] [-f WITH_NORM] [-g ID_GLOBBER] [-o OUTPUT] [-v--verbose] [--id-list ID_LIST] [--keep-log]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -i IMG_DIR, --img-dir IMG_DIR
+                        Directory to image files.
+  -s SEG_DIR, --seg-dir SEG_DIR
+                        Directory to segmentation files.
+  -p PARAM_FILE, --param-file PARAM_FILE
+                        Path to the pyradiomics settings.
+  -f WITH_NORM, --with-norm WITH_NORM
+                        If specified path to a normalization state-dir, extract_feature_with_norm will be called.
+  -g ID_GLOBBER, --id-globber ID_GLOBBER
+                        Regex ID globber for pairing images and segmentation.
+  -o OUTPUT, --output OUTPUT
+                        Where to output the computed features as excel.
+  -v--verbose           Verbosity option.
+  --id-list ID_LIST     If specificied pass this to feature extractor.
+  --keep-log            If true, the log file is saved to "pyradiomics.log"
+/home/lwong/Toolkits/Anaconda/envs/radiomics/lib/python3.8/site-packages/outdated/utils.py:14: OutdatedCheckFailedWarning: Failed to check for latest version of package.
+
+```
+
+#### `IMG_DIR`
+
+Directory where the target nifty images are. All the files with a suffix `.nii.gz` will be scanned and included. You can specify `ID_GLOBBER` and `ID_LIST` to fine tune this behavior.
+
+#### `SEG_DIR`
+
+Directory where the segmentations are. Also needs to be `.nii.gz` files. The program will automatically tries to compute the overlap between the images and the segmentation based on the `ID_GLOBBER` result. Only the intersection will be processed (i.e., IDs that exists in both the image directory and the segmentation directory)
+
+#### `ID_GLOBBER`
+
+This packages uses an ID globbed from each file name to pair the images and segmentation. This option is a regex pattern that will allow you to glob the ID from the file name excluding the suffix ".nii.gz". For example, if you have files named `001_T1w.nii.gz` and `001_seg.nii.gz`, you can pair up these tow file by specifying the globber regex as something like `"^\d+"`. 
+
+#### `ID_LIST`
+
+If you don't want to run all the images within `IMG_DIR`, you can use this option to specify the data to load. Currently there are two methods to set this option. First, explicity definition with comma separated string, e.g., `--id-list "001,002,003"`. The program will then only extract the features from the data with ID globbed as one `001`, `002`, and `003`. 
+
+#### `KEEP_LOG`
+
+This program uses the logger from `mntk` for logging. This could be annoying for some as if it breaks the logging system. By default, it creats a temp log file to hold all the outputs, but this temp file will be destroyed together with the main process. Use this option to prevent it. 
 
 
 ## Feature Selector
@@ -133,3 +178,19 @@ fs.load("features_selected.fs")
 fs.predict(features_a.T)
 ```
 
+# Reference
+
+Please consider citing this paper if you found this repository helpful for your study
+
+```
+@article{wong2022radiomics,
+  title={Radiomics for discrimination between early-stage nasopharyngeal carcinoma and benign hyperplasia with stable feature selection on MRI},
+  author={Wong, Lun M and Ai, Qi Yong H and Zhang, Rongli and Mo, Frankie and King, Ann D},
+  journal={Cancers},
+  volume={14},
+  number={14},
+  pages={3433},
+  year={2022},
+  publisher={MDPI}
+}
+```
