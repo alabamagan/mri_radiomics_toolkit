@@ -17,6 +17,7 @@ from RENT import RENT
 
 __all__ = ['FeatureSelector', 'supervised_features_selection', 'preliminary_feature_filtering']
 
+
 def compute_ICC(featset_A: pd.DataFrame,
                 featset_B: pd.DataFrame,
                 ICC_form: Optional[str] = 'ICC2k') -> pd.DataFrame:
@@ -138,10 +139,11 @@ def compute_ICC(featset_A: pd.DataFrame,
     KK = KK.sort_index(level=0)
     return KK, outted_features
 
-def ICC_thres_filter(featset_A: pd.DataFrame,
-                     featset_B: pd.DataFrame,
-                     ICC_threshold: Optional[float] = 0.9,
-                     ICC_form: Optional[str] = 'ICC2k') -> pd.DataFrame:
+
+def filter_features_by_ICC_thres(featset_A: pd.DataFrame,
+                                 featset_B: pd.DataFrame,
+                                 ICC_threshold: Optional[float] = 0.9,
+                                 ICC_form: Optional[str] = 'ICC2k') -> pd.DataFrame:
     r"""
     Wrapper function for convinience
     `featset_A/B` columns should be patient identifiers, and rows should be features.
@@ -150,8 +152,9 @@ def ICC_thres_filter(featset_A: pd.DataFrame,
     ICCs = ICCs.loc[ICCs['ICC'] >= 0.9].index
     return ICCs
 
-def T_test_filter(features: pd.DataFrame,
-                  target: pd.DataFrame) -> pd.DataFrame:
+
+def filter_features_by_T_test(features: pd.DataFrame,
+                              target: pd.DataFrame) -> pd.DataFrame:
     r"""
     Return the p-values of the t-test.
 
@@ -205,34 +208,57 @@ def T_test_filter(features: pd.DataFrame,
 
     return T_test_pvals
 
+
+def filter_low_var_features(features: pd.DataFrame) -> Tuple[pd.Index, skfs.VarianceThreshold]:
+    r"""Filter away features with low variance that are likely to be errors.
+
+    Args:
+        features (pd.DataFrame):
+            Input features.
+
+    Returns:
+        pd.Index:
+            Index of features with variance higher than threshold.
+        skfs.VarianceThreshold:
+            The filter used for porting attributes.
+
+    """
+    var_filter = skfs.VarianceThreshold(threshold=.95 * (1 - .95))
+    var_feats_a = var_filter.fit_transform(features.T)
+    var_feats_a_index = features.index[var_filter.get_support()]
+    return var_feats_a_index, var_filter
+
 def preliminary_feature_filtering(features_a: pd.DataFrame,
                                   features_b: pd.DataFrame,
                                   targets: pd.DataFrame,
                                   ICC_form: Optional[str] = 'ICC2k'
-                                  ):
-    r"""
+                                  ) -> Tuple[pd.DataFrame, Union[pd.DataFrame, None]]:
+    r"""Preliminary feature selection by statistical methods.
+
     Perform feature selction following the steps:
     1. p-values of features < .001
     2. Features with extremely low variance removed (because they are likely to be errors or useless
     2. ICC of features > 0.9
     3. Dimensional reduction
-    This assume features are already normalized.
 
-    .. note::
-        * Note 1: Variance threshold remove features with very low variance, probably all has the same values and is
-          basically useless (e.g., all are 0 or 1).
 
     Args:
-        features_a:
-            Features extracted using segmentation set A. The diagnostics will be dropped inplace if exist.
-        features_b:
-            Features extracted using segmentation set B, if this is None, some the ICC part will be skipped
-        targets:
-            The ground-truth class. The column should be 'Status' and the rows will be the patients.
-            If the index of target patients and features patients are not the same, an error will be raised.
+        features_a (pd.DataFrame):
+            Features extracted using segmentation set A.
+        features_b (pd.DataFrame):
+            Features extracted using segmentation set B. If None, some ICC parts will be skipped.
+        targets (pd.DataFrame):
+            Ground-truth class with 'Status' column and patient rows.
+            If target patients and features patients indices are not the same, an error will be raised.
+        ICC_form (str, optional): The form of Intraclass Correlation Coefficient (ICC) to use. Defaults to 'ICC2k'.
 
     Returns:
-        Tuple of filtered features_a and features_b
+        tuple: Tuple of filtered features_a and features_b DataFrames.
+
+    Notes:
+        - Variance threshold removes features with very low variance, which are likely to be useless (e.g., all values are 0 or 1).
+        - Features known to be useless, such as 'Diagnostics' column, are dropped.
+        - If features_b is provided, ICC filtering is applied.
     """
     logger = MNTSLogger['preliminary_feature_filtering']
 
@@ -247,12 +273,11 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
 
     # Drop features with extremely low variance (i.e., most are same value)
     logger.info("Dropping features with low variance...")
-    var_filter = skfs.VarianceThreshold(threshold=.95*(1-.95))
-    var_feats_a = var_filter.fit_transform(features_a.T)
-    var_feats_a_index = features_a.index[var_filter.get_support()]
+    var_feats_a_index, var_filter = filter_low_var_features(features_a)
 
     # if features_b is provided perform ICC filter
     if features_b is not None:
+        # Also drop the low zero vairance features for set b
         var_feats_b = var_filter.fit_transform(features_b.T)
         var_feats_b_index = features_b.index[var_filter.get_support()]
         # Only those that fulfilled the variance threshold in both set of features are to be included
@@ -263,9 +288,9 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
 
         # Filter features by ICC
         logger.info("Dropping features by their intra-observer segmentation ICC")
-        _icc90_feats = ICC_thres_filter(features_a.loc[mutual_features],
-                                        features_b.loc[mutual_features], 0.9,
-                                        ICC_form=ICC_form)
+        _icc90_feats = filter_features_by_ICC_thres(features_a.loc[mutual_features],
+                                                    features_b.loc[mutual_features], 0.9,
+                                                    ICC_form=ICC_form)
         feats_a = features_a.loc[_icc90_feats]
         feats_b = features_b.loc[_icc90_feats]
     else:
@@ -279,13 +304,16 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
     if len(feats_a.columns.difference(targets.index)) > 0:
         msg = f"Differene between features and target detected: {feats_a.columns.difference(targets.index)}"
         raise KeyError(msg)
-    pvals_feats_a = T_test_filter(feats_a, targets)
+    pvals_feats_a = filter_features_by_T_test(feats_a, targets)
     feats_a = feats_a.loc[(pvals_feats_a['pval'] < p_thres).index]
     if not features_b is None:
-        pvals_feats_b = T_test_filter(feats_b, targets)
+        pvals_feats_b = filter_features_by_T_test(feats_b, targets)
         feats_b = feats_a.loc[(pvals_feats_b['pval'] < p_thres).index]
 
     return feats_a, feats_b
+
+
+
 
 def supervised_features_selection(features: pd.DataFrame,
                                   targets: pd.DataFrame,
@@ -297,7 +325,7 @@ def supervised_features_selection(features: pd.DataFrame,
                                   n_splits: int = 5,
                                   n_trials: int = 100,
                                   boosting: bool = True,
-                                  **kwargs):
+                                  **kwargs) -> pd.DataFrame:
     r"""
     Use RENT [1] to select features. Essentially `n_trials` models were trained using the features and targets, and
     the coefficients of the models for these features were recorded as a [`n_trials` by `features.shape[0]`] matrix.
@@ -435,21 +463,33 @@ def features_selection(features_a: pd.DataFrame,
                        criteria_threshold=(0.9, 0.5, 0.99),
                        boosting: bool = True,
                        ICC_form: Optional[str] = 'ICC2k'):
-    r"""
-    Features selection wrapper function, execute:
-    1. initial feature filtering `preliminary_feature_filtering`
-    2. normalization of features `features_normalization`
-    3. RENT/BRENT `supervised_features_selection`
+    r"""Performs feature selection using a wrapper function that executes preliminary feature filtering,
+    normalization of features, and supervised feature selection (RENT/BRENT).
 
     Args:
-        features_a:
-            Features extracted using segmentation set A
-        features_b:
-            Features extracted using segmentation set B
-        targets:
+        features_a (pd.DataFrame):
+            Features extracted using segmentation set A.
+        targets (pd.DataFrame):
+            Target variable for the feature selection process.
+        features_b (pd.DataFrame, optional):
+            Features extracted using segmentation set B. If this is not provided, the ICC step will be skipped.
+            Defaults to None.
+        n_trials (int, optional):
+            Number of trials for the feature selection process. Defaults to 500.
+        criteria_threshold (tuple, optional):
+            Criteria thresholds for feature selection. Defaults to (0.9, 0.5, 0.99).
+        boosting (bool, optional):
+            If True, use boosting for feature selection. Defaults to True.
+        ICC_form (str, optional):
+            The form of Intraclass Correlation Coefficient (ICC) to use. Defaults to 'ICC2k'.
 
     Returns:
+        pd.DataFrame: The selected features after the feature selection process.
 
+    Note:
+        - Initial feature filtering is done using quantitative methods and depends on variance and ICC.
+          Normalizing data prior to this step would be improper, as it alters the mean and variance of the features.
+        - The supervised feature selection uses RENT or BRENT, depending on the `boosting` parameter.
     """
     logger = MNTSLogger['model_building']
 
@@ -490,13 +530,43 @@ def bootstrapped_features_selection(features_a: pd.DataFrame,
                                     return_freq: Optional[bool] = False,
                                     boosting: Optional[bool] = True,
                                     ICC_form: Optional[str] = 'ICC2k') -> List[pd.DataFrame]:
-    r"""
-    Use either bootstrapping to further improve selection stability
+    r"""Improve feature selection stability using bootstrapping.
+
+    This function uses bootstrapping to create multiple subsets of the input data and applies
+    feature selection on each subset. The final selected features are those that appear in the
+    results with a frequency greater than a specified threshold.
+
+    Args:
+        features_a (pd.DataFrame):
+            The first set of features (input variables).
+        targets (pd.DataFrame):
+            The target (output) variable.
+        features_b (Optional[pd.DataFrame], default=None):
+            The second set of features (input variables).
+        criteria_threshold (Optional[Iterable[float]], default=(0.9, 0.5, 0.99))
+            The criteria thresholds for feature selection.
+        n_trials (Optional[int], default=500)
+            The number of trials for feature selection.
+        boot_runs : (Optional[int], default=250)
+            The number of bootstrapping runs.
+        boot_ratio : (Optional[Iterable[float]], default=(0.8, 1.0))
+            The range for generating random bootstrap ratios.
+        thres_percentage (Optional[float], default=0.4)
+            The threshold percentage for selecting features based on their appearance frequency.
+        return_freq (Optional[bool], default=False)
+            If True, return the feature frequencies along with the selected features.
+        boosting (Optional[bool], default=True)
+            If True, use boosting for feature selection.
+        ICC_form (Optional[str], default='ICC2k')
+            The form of Intraclass Correlation Coefficient (ICC) to use.
+
+    Returns:
+        List[pd.DataFrame]
+            A list of selected features from `features_a` and `features_b`.
 
     .. notes::
+        See also the arguments detailed in `func:features_selection`.
 
-    See also:
-        See arguements detailed in `func:features_selection`
 
     """
     logger = MNTSLogger[__name__]
