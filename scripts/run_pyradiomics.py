@@ -4,6 +4,7 @@ import SimpleITK as sitk
 import pandas as pd
 import logging
 import numpy as np
+import radiomics
 from radiomics import featureextractor
 from pathlib import Path
 from mnts.mnts_logger import MNTSLogger
@@ -19,6 +20,23 @@ global id_globber
 
 # Defaults
 default_pyrad_paramfile = Path(__file__).joinpath('../../pyradiomics_setting/pyradiomics_setting-v3.yml')
+
+def take_over_logger(pyrad_logger: logging.Logger):
+    r"""Quikc snippet to take over the logger used by pyradiomics"""
+    handlers = pyrad_logger.handlers
+    for h in handlers:
+        pyrad_logger.removeHandler(h)
+
+    # add back MNTS created handlers
+    if MNTSLogger.global_logger is None:
+        msg = 'Only call this snippet after the global logger was created.'
+        raise ArithmeticError(msg)
+
+    mnts_logger = MNTSLogger['pyradiomics']
+    mnts_handlers = mnts_logger._logger.handlers
+    for f in mnts_handlers:
+        pyrad_logger.addHandler(f)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -68,9 +86,12 @@ def main():
         i += 1
         log_file = log_file_base.joinpath(f'{basename}-{i}')
 
-
     with MNTSLogger(log_dir=str(log_file.with_suffix('.log')), log_level='debug',
                     logger_name='pyradiomics', verbose=True, keep_file=args.keep_log) as logger:
+        # Take over radiomics logger
+        rad_logger = radiomics.logger
+        take_over_logger(rad_logger)
+
         if str(args.id_list).count(os.sep):
             idlist_file = Path(args.id_list)
             if idlist_file.suffix == '.xlsx':
