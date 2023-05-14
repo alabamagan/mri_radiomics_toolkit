@@ -167,6 +167,8 @@ class Test_pipeline(unittest.TestCase):
         pass
 
     def test_feature_selection(self):
+        r"""Test the feature extractor in the pipeline"""
+        self._logger.info("This could take a while...")
         p_feat_a = Path('test_data/assets/samples_feat_1st.xlsx')
         p_feat_b = Path('test_data/assets/samples_feat_2nd.xlsx')
         p_gt = Path('test_data/assets/sample_datasheet.csv')
@@ -281,6 +283,7 @@ class Test_pipeline(unittest.TestCase):
                                                    features.loc[test_feats], gt.loc[test_feats])
             except:
                 self._logger.warning("Fitting with testing data failed!")
+                predict_table = "Error"
             # Test model building without testing data
             try:
                 results, _ = model.fit(features.loc[train_feats], gt.loc[train_feats])
@@ -288,7 +291,7 @@ class Test_pipeline(unittest.TestCase):
                 self._logger.warning("Fitting without testing data failed!")
                 self._logger.exception(f"{e}")
             self._logger.info(f"Results: {pprint.pformat(results)}")
-            self._logger.info(f"Predict_table: {predict_table.to_string()}")
+            self._logger.info(f"Predict_table: {predict_table}")
             self._logger.info(f"Best params: {pprint.pformat(model.saved_state)}")
 
             # Test save functionality

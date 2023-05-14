@@ -220,8 +220,7 @@ def filter_features_by_T_test(features: pd.DataFrame,
             t_pval = pg.mwu(_f_A, _f_B)['p-val'].astype('float')
             test_name = 'Mann-Whitney U'
 
-        s = pd.DataFrame([[test_name, t_pval]], columns=['test', 'pval'])
-        s.index = ['_'.join(f)]
+        s = pd.Series([test_name, t_pval], index=['test', 'pval'], name='_'.join(f))
         T_test_pvals.append(s)
     T_test_pvals = pd.concat(T_test_pvals, axis=0)
     T_test_pvals.index = features.index
@@ -301,7 +300,7 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
         var_feats_b = var_filter.fit_transform(features_b.T)
         var_feats_b_index = features_b.index[var_filter.get_support()]
         # Only those that fulfilled the variance threshold in both set of features are to be included
-        mutual_features = set(var_feats_a_index) & set(var_feats_b_index)
+        mutual_features = list(set(var_feats_a_index) & set(var_feats_b_index))
         logger.info(f"{len(mutual_features)} features kept: \n{mutual_features}")
         logger.info(f"{len(set(features_a.index) - set(mutual_features))} features discarded: \n"
                     f"{set(features_a.index) - set(mutual_features)}")

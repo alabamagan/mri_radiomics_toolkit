@@ -3,7 +3,8 @@ from pathlib import Path
 import pandas as pd
 
 from mri_radiomics_toolkit.feature_selection import filter_features_by_T_test, filter_low_var_features, \
-    filter_features_by_ICC_thres, FeatureSelector, compute_ICC, bootstrapped_features_selection
+    filter_features_by_ICC_thres, FeatureSelector, compute_ICC, bootstrapped_features_selection, \
+    preliminary_feature_filtering, supervised_features_selection
 from mnts.mnts_logger import MNTSLogger
 
 class Test_selector(unittest.TestCase):
@@ -28,9 +29,9 @@ class Test_selector(unittest.TestCase):
 
         # make sure the cases are overlapped between features and gt dataframe
         cases = list(set(features_a.columns) & set(gt.index))
-        cls.gt    = gt.loc[cases[:20]]
-        cls.features_a = features_a
-        cls.features_b = features_b
+        cls.gt    = gt.loc[cases]
+        cls.features_a = features_a[cases]
+        cls.features_b = features_b[cases]
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -47,14 +48,16 @@ class Test_selector(unittest.TestCase):
         self.assertIsInstance(pval_df, pd.DataFrame)
 
     def test_filter_by_ICC(self):
-
+        # This might take a while
         icc_df = filter_features_by_ICC_thres(self.features_a, self.features_b)
         self.assertIsInstance(icc_df, pd.MultiIndex)
 
     def test_filter_by_variance(self):
-        pass
+        idx, _ = filter_low_var_features(self.features_a)
+        self.assertIsInstance(idx, pd.MultiIndex)
 
     def test_preliminary_filter_pipeline(self):
+        preliminary_feature_filtering(self.features_a, self.features_b, self.gt)
         pass
 
     def test_supervised_filter_pipeline(self):
