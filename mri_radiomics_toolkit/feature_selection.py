@@ -220,9 +220,9 @@ def filter_features_by_T_test(features: pd.DataFrame,
             t_pval = pg.mwu(_f_A, _f_B)['p-val'].astype('float')
             test_name = 'Mann-Whitney U'
 
-        s = pd.Series([test_name, t_pval], index=['test', 'pval'], name='_'.join(f))
+        s = pd.Series([test_name, t_pval.item()], index=['test', 'pval'], name='_'.join(f))
         T_test_pvals.append(s)
-    T_test_pvals = pd.concat(T_test_pvals, axis=0)
+    T_test_pvals = pd.concat(T_test_pvals, axis=1).T
     T_test_pvals.index = features.index
 
     return T_test_pvals
