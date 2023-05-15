@@ -1,12 +1,13 @@
 import unittest
 import pandas as pd
 import radiomics
+import tempfile
 from pathlib import Path
 
 from mnts.mnts_logger import MNTSLogger
 from mri_radiomics_toolkit.feature_extractor import get_radiomics_features, \
     get_radiomics_features_from_folder, FeatureExtractor
-from mri_radiomics_toolkit.utils import is_compressed
+from mri_radiomics_toolkit.utils import is_compressed, compress, decompress
 
 
 
@@ -75,3 +76,18 @@ class Test_feature_extractor(unittest.TestCase):
             'rRHuTGQ1sIpz/+1Tva0qsuATMgwJNPu9AeiUQAbTAIAAA=='
         self.assertFalse(is_compressed(extractor.param_file))
 
+    def test_saved_state_is_compressed(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            extractor = FeatureExtractor()
+            compressed_param_file = \
+                'H4sIAG4MYmQC/31RwVLCMBC98xW5cUEGCx7oTS3DOMLIAOrB8bC023bHNImbRGEc/92UtqIXTpv3XvZt8' \
+                'pYqKHB7MBj3hHhgKkiBjMXXd4CLm1WU1LwQO1LPlLkyFqNhdHWk5M5EyRoy8rZmpydyia7UWSz6Gebgpe' \
+                'sfpVxzisFPbNlj4z4+6z5O7lJtTYmMzRjRzVnoedNoqaggFi+j4WQyjQbiciCi16DMOTSgcu1HZnujVYD' \
+                'Ufq2XIzjPeCvB2topJ7ZOc4bc+F6ImUIuDr/AsTYduvfstCXbwiXsqfJVhxDU9c5q6R0m+EHgSKs/Wntc' \
+                '65237tzltdZHffPugTFr2c0bfiq03exHRSHWilz3tidgApXW+doSmq0WMq2ayjIcehadI1XUFKOFykjMV' \
+                'rRHuTGQ1sIpz/+1Tva0qsuATMgwJNPu9AeiUQAbTAIAAA=='
+            extractor.param_file = compressed_param_file
+            extractor.save(Path(tempdir) / 'test')
+            extractor.load(Path(tempdir) / 'test.fe')
+            self.assertEqual(extractor.param_file,
+                             decompress(compressed_param_file))
