@@ -12,6 +12,8 @@ from mnts.mnts_logger import MNTSLogger
 from scipy.stats import *
 from sklearn import feature_selection as skfs
 from sklearn import linear_model, preprocessing
+from sklearn.utils._testing import ignore_warnings
+from sklearn.exceptions import ConvergenceWarning
 from tqdm.auto import *
 
 from RENT import RENT
@@ -334,7 +336,7 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
 
 
 
-
+@ignore_warnings(category=ConvergenceWarning)
 def supervised_features_selection(features: pd.DataFrame,
                                   targets: pd.DataFrame,
                                   alpha: Union[float, Iterable[float]],
@@ -563,7 +565,7 @@ def bootstrapped_features_selection(features_a: pd.DataFrame,
 
     Args:
         features_a (pd.DataFrame):
-            The first set of features (input variables).
+            The first set of features (input variables). Rows should be features and column should be data points.
         targets (pd.DataFrame):
             The target (output) variable.
         features_b (Optional[pd.DataFrame], default=None):
@@ -736,7 +738,7 @@ class FeatureSelector(object):
                 corresponding to the status of each patient.
             X_b (pd.DataFrame, Optional):
                 Radiomics features from another segmentation. Aims to filter away features that are susceptable to
-                to inter-observer changes in the segmentation. Default to None.
+                inter-observer changes in the segmentation. Default to None.
 
         Returns:
             feats (pd.DataFrame):
