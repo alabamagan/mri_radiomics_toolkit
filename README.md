@@ -19,32 +19,29 @@ In addition, this repo introduces a feature selection technique combing boosting
 
 # Installation
 
-Clone and install MNTS
+Clone reprositories
 
-```sh
-pip install git+https://github.com/alabamagan/mri_normalization_tools
-```
-
-Clone this repository
-
-```shell
 git clone --recursive https://github.com/alabamagan/mri_radiomics_toolkit
-```
+Install mnts
 
+```bash
+cd mri_radiomics_toolkits/ThirdParty/mnts
+pip install .
+cd -
+```
 Install the forked RENT
 
-```sh
+```bash
 cd mri_radiomics_toolkit/ThirdPartyRENT
 pip install .
+cd -
 ```
-
 Install this package
 
 ```sh
 cd ../..
 pip install .
 ```
-
 # Usage
 
 ## Feature extractor
@@ -73,7 +70,6 @@ df = fe.extract_features(p_im, p_seg, param_file=p_param)
 fe.save_features("saveout.xlsx") # write results here, columns are the cases
 fe.save("extractor_state.fe") # for using this directly during inference
 ```
-
 ### Usage (Console)
 
 An entry point for the script `scripts/run_pyradiomics.py` can be accessed through the command `mradtk-extract-features`
@@ -100,7 +96,6 @@ optional arguments:
   --keep-log            If true, the log file is saved to "pyradiomics.log"
 /home/lwong/Toolkits/Anaconda/envs/radiomics/lib/python3.8/site-packages/outdated/utils.py:14: OutdatedCheckFailedWarning: Failed to check for latest version of package.
 ```
-
 #### `IMG_DIR`
 
 Directory where the target nifty images are. All the files with a suffix `.nii.gz` will be scanned and included. You can specify `ID_GLOBBER` and `ID_LIST` to fine tune this behavior.
@@ -132,7 +127,6 @@ graph LR
   C --> |"p < 0.05"|D["ICC thres<br>(Two segments)"]
   D --> |ICC > 0.9 & p < 0.05|E([BB-RENT])
 ```
-
 ### Functionalities
 
 * Select features from excel of extracted features
@@ -175,7 +169,6 @@ fs.save("features_selected.fs")
 fs.load("features_selected.fs")
 fs.predict(features_a.T)
 ```
-
 # DataFrame convention
 
 In this packages, the features data frame are generally configured with rows being each unique feature and columns being the data points (patients). The index typically has three levels `{1: 'Pre-processing', 2: 'FeatureGroup', 3: 'Feature_Name')`. The index is generally `pd.MultiIndex`, but sometimes, its converted to single level index `pd.Index` by maping `'_'.join`.
@@ -217,12 +210,20 @@ In this packages, the features data frame are generally configured with rows bei
 |                |               | ShortRunLowGrayLevelEmphasis     | 0.03399   | 0.030848  | 0.012844  |
 +----------------+---------------+----------------------------------+-----------+-----------+-----------+
 ```
-
 ## Convention in fit()
 
 Regardless, the `fit()` function implemented in this package usually follows `scipy` and `sklearn` convention, where rows are data points and columns are features. This might be confusing for many, but you only need to transpose the dataframe correctly for things to work.
 
 The rule of thumb is for `fit()` function with `pd.DataFrame` feature inputs, the rows are data points and the columns are features; for other functions, the rows are features and the columsn are data points.
+
+# TODO
+
+* [ ]  Add support for multi-class classification
+* [ ]  Add support for Cox models
+* [ ]  Add support for regression
+* [ ]  Re-implement augmentation module as an optional installation requirement
+* [ ]  Doxygen for documentation
+* [ ]  Add examplesUpdate
 
 # Reference
 
@@ -240,4 +241,3 @@ Please consider citing this paper if you found this repository helpful for your 
   publisher={MDPI}
 }
 ```
-
