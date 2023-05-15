@@ -7,7 +7,7 @@ import joblib
 import pandas as pd
 import yaml
 from mnts.mnts_logger import MNTSLogger
-from tying import Union
+from typing import Union
 
 from . import FeatureExtractor, FeatureSelector, ModelBuilder
 

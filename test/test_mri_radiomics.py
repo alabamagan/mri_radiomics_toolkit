@@ -6,7 +6,6 @@ import shutil
 import pprint
 from pathlib import Path
 from mnts.mnts_logger import MNTSLogger
-import torchio as tio
 from mri_radiomics_toolkit import *
 from mri_radiomics_toolkit.perf_metric import getStability, confidenceIntervals, hypothesisTestT, \
             hypothesisTestV, feat_list_to_binary_mat
@@ -30,14 +29,6 @@ class Test_pipeline(unittest.TestCase):
         self._p_setting = Path('test_data/assets/sample_pyrad_settings.yml')
         self.temp_dir_obj = tempfile.TemporaryDirectory()
         self.temp_dir = Path(self.temp_dir_obj.name)
-
-        self._transform = tio.Compose([
-            tio.ToCanonical(),
-            tio.RandomAffine(scales=[0.95, 1.05],
-                             degrees=10),
-            tio.RandomFlip(axes='lr'),
-            tio.RandomNoise(mean=0, std=[0, 1])
-        ])
 
     def tearDown(self) -> None:
         self.temp_dir_obj.cleanup()
@@ -102,22 +93,6 @@ class Test_pipeline(unittest.TestCase):
         # Display tested itmes
         self._logger.info(f"Left:\n {_df.to_string()}")
         self._logger.info(f"Right:\n {df.to_string()}")
-
-    def test_feature_extractor_w_aug(self):
-        p_im = Path('test_data/images/')
-        p_seg_A = Path('test_data/segment')
-        p_seg_B = Path('test_data/segment')
-
-        # Create feature extractor
-        self._logger.info("{:-^50s}".format(" Testing feature extraction "))
-        fe = FeatureExtractor(id_globber=self._globber)
-        fe.param_file = self._p_setting
-        df = fe.extract_features(p_im, p_seg_A, p_seg_B, param_file=self._p_setting, augmentor=self._transform)
-        fe.save_features(self.temp_dir.joinpath('sample_features.xlsx'))
-        self._logger.info("\n" + df.to_string())
-        self.assertTrue(len(df) > 0)
-        self.assertTrue(self.temp_dir.joinpath('sample_features.xlsx').is_file())
-        self._logger.info("Feature extraction pass...")
 
     def test_feature_extractor_param_file_load(self):
         from mri_radiomics_toolkit.feature_extractor import FeatureExtractor

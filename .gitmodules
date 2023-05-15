@@ -4,6 +4,3 @@
 [submodule "ThirdParty/mnts"]
 	path = ThirdParty/mnts
 	url = git@github.com:alabamagan/mri_normalization_tools.git
-[submodule "ThirdParty/torchio"]
-	path = ThirdParty/torchio
-	url = git@github.com:alabamagan/torchio.git
