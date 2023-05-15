@@ -272,10 +272,11 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
         ICC_form (str, optional): The form of Intraclass Correlation Coefficient (ICC) to use. Defaults to 'ICC2k'.
 
     Returns:
-        tuple: Tuple of filtered features_a and features_b DataFrames.
+        tuple: Tuple of filtered features_a and features_b DataFrames. The rows are features and the columns are cases.
 
     Notes:
-        - Variance threshold removes features with very low variance, which are likely to be useless (e.g., all values are 0 or 1).
+        - Variance threshold removes features with very low variance, which are likely to be useless (e.g., all values
+          are 0 or 1).
         - Features known to be useless, such as 'Diagnostics' column, are dropped.
         - If features_b is provided, ICC filtering is applied.
     """
@@ -350,17 +351,22 @@ def supervised_features_selection(features: pd.DataFrame,
     the coefficients of the models for these features were recorded as a [`n_trials` by `features.shape[0]`] matrix.
     The quality of each feature were evaluted through these coefficient using three criteria.
 
+    This function inherits some arguements from RENT. See :func:`RENT.RENT_Regression` for more.
 
     .. notes::
         * [1] Jenul, Anna, et al. "RENT--Repeated Elastic Net Technique for Feature Selection."
               arXiv preprint arXiv:2009.12780 (2020).
 
-
     Args:
         features (pd.DataFrame):
             Columns should be samples and rows should be features.
-        targets:
+        targets (pd.DataFrame):
             Row should be samples and a column 'Status' should hold the class.
+        alpha (float):
+            Regularization term. Its `alpha` in scipy and `1/C` in sklearn. Default to 0.02.
+        l1_ratio (float):
+            Ratio between l1 and l2 regularization in elastic net. Put it simply, it's the weight between LASSO and
+            Ridge regression. If it's 0, the algorithm collapse to become Ridge.
         n_features:
             (Deprecated)
         n_splits (int):
@@ -370,7 +376,7 @@ def supervised_features_selection(features: pd.DataFrame,
             set to 1, a single run of elastic net will be executed instead.
 
     Returns:
-
+        pd.DataFrame
     """
     logger = MNTSLogger['sup-featselect']
     #|===================|
