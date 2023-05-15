@@ -541,7 +541,7 @@ def features_selection(features_a: pd.DataFrame,
                                                 n_trials=n_trials,
                                                 n_features=25,
                                                 boosting=boosting)
-    logger.info(f"in features: \n{feats_a.sort_index(level=0)}")
+    logger.debug(f"in features: \n{feats_a.sort_index(level=0)}")
     logger.info(f"The selected features: \n{feats_a_out}")
     # classification models
     return feats_a_out
@@ -755,6 +755,9 @@ class FeatureSelector(object):
                                                 return_freq=True,
                                                 boosting=self.setting['boosting'],
                                                 ICC_form=self.setting['ICC_form'])
+        if len(feats) == 0:
+            msg = "No features returned. The `thres_percentage` setting might be too high, try tunning it down."
+            raise ArithmeticError(msg)
         self._logger.info(f"Selected {len(feats[1])} features: {feats[1]}")
 
         self.saved_state['selected_features'] = feats[1]

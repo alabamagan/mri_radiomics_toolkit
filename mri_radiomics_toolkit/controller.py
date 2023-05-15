@@ -1,4 +1,5 @@
 import pprint
+import warnings
 from io import StringIO
 from pathlib import Path
 from typing import Optional, Tuple
@@ -10,6 +11,7 @@ from mnts.mnts_logger import MNTSLogger
 from typing import Union
 
 from . import FeatureExtractor, FeatureSelector, ModelBuilder
+from .utils import compress, decompress
 
 __all__ = ['Controller']
 
@@ -95,7 +97,7 @@ class Controller(object):
             f = Path(f)
             with f.open('r') as stream:
                 self._logger.info(f"Reading from file: {str(f)}")
-                data_loaded = yaml.safe_load(stream)
+                settings_loaded = yaml.safe_load(stream)
                 # Read it to saved_state
                 stream.seek(0)
                 self.saved_state['setting_file_stream'] = stream.read()
@@ -105,17 +107,17 @@ class Controller(object):
                 raise FileNotFoundError(msg)
             else:
                 with StringIO(self.saved_state['setting_file_stream']) as stream:
-                    data_loaded = yaml.safe_load(stream)
+                    settings_loaded = yaml.safe_load(stream)
 
-        if 'Selector' in data_loaded.keys():
-            _s = data_loaded['Selector']
+        if 'Selector' in settings_loaded.keys():
+            _s = settings_loaded['Selector']
             s = self.selector.saved_state['setting']
             s.update((k, _s[k]) for k in set(_s).intersection(s))
             self.selector.saved_state['setting'] = s
             self._logger.info(f"Updated selector setting: {pprint.pformat(s)}")
 
-        if 'Extractor' in data_loaded.keys():
-            _s = data_loaded['Extractor']
+        if 'Extractor' in settings_loaded.keys():
+            _s = settings_loaded['Extractor']
             id_globber = _s.get('id_globber', "^\w*")
             self.extractor.id_globber = id_globber
             self._logger.info(f"Updating extractor setting: {id_globber}")
@@ -127,8 +129,28 @@ class Controller(object):
                 msg = "No pyrad param file was found in saved state."
                 self._logger.warning(msg)
 
-        if 'Controller' in data_loaded.keys():
-            _s = data_loaded['Controller']
+        if 'Controller' in settings_loaded.keys():
+            _s = settings_loaded['Controller']
+
+    def set_pyrad_param_file(self,
+                             param_file_path: Union[Path, str]) -> None:
+        r"""Set the configuration file for feature extraction. This is optional if you only want prediction from already
+        extracted features. However, if you want to perform prediction from images directly, you must set the param file
+        using either this file or the `pyrad_param_file` attribute of the controller setting.
+
+        Args:
+            param_file_path (Path or str):
+                Path to the yml Pyradiomics setting file.
+
+        Raises:
+            FileNotFoundError
+                Error is raised if the input file cannot be opened
+
+        """
+        param_file_path = Path(param_file_path)
+        if not param_file_path.is_file():
+            raise FileNotFoundError(f"Cannot open file: {str(param_file_path)}")
+
 
 
     def load_norm_settings(self,
@@ -228,7 +250,9 @@ class Controller(object):
 
         """
         if (self.extractor.param_file is None) and (self.selected_features is None):
-            raise AttributeError("Please set the pyradiomics parameter file first.")
+            msg = f"Param file for Pyradiomics feature extraction is not provided. The controller fitted without " \
+                  f"this setting file cannot perform predictions directly on input images."
+            raise warnings.warn(msg)
 
         overlap_index = set(df_a.index) & set(gt_df.index)
         if df_b is not None:
@@ -263,6 +287,11 @@ class Controller(object):
                 img_path: Path,
                 seg_path: Path,
                 with_normalization: Optional[bool] = False) -> pd.DataFrame:
+        if self.extractor.param_file is None:
+            msg = f"Pyradiomics settings was not loaded. Cannot perform direct prediction on images because the " \
+                  f"controller doesn't know how to extract the features. Perform this setting using the method " \
+                  f"`set_pyrad_param_file(file_dir)`."
+            raise AttributeError
         if with_normalization is not None:
             self._with_norm = bool(with_normalization)
         df = self.extract_feature(img_path, seg_path=seg_path)

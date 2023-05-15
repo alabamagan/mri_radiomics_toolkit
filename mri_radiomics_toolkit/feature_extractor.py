@@ -20,6 +20,9 @@ from mnts.scripts.normalization import run_graph_inference
 from mnts.utils import get_unique_IDs, load_supervised_pair_by_IDs, repeat_zip
 from radiomics import featureextractor
 
+from .utils import zipdir, compress, decompress, is_compressed
+
+
 # Fix logger
 
 __all__ = ['FeatureExtractor']
@@ -110,7 +113,7 @@ def get_radiomics_features(fn: Path,
                 msk[i] = filt.Execute(_msk)
 
             if not (np.isfinite(sitk.GetArrayFromImage(im)).all() and np.isfinite(sitk.GetArrayFromImage(_msk)).all()):
-                logger.warning(f"Detected NAN in image {str(fn    )}")
+                logger.warning(f"Detected NAN in image {str(fn)}")
 
         #╔═════════════════════╗
         #║▐ Extract features   ║
@@ -304,7 +307,10 @@ class FeatureExtractor(object):
 
     @property
     def param_file(self):
-        return self.saved_state['param_file']
+        out = self.saved_state['param_file']
+        if is_compressed(out):
+            out = decompress(out)
+        return out
 
     @param_file.setter
     def param_file(self, v: Union[str, Path]):
@@ -330,7 +336,11 @@ class FeatureExtractor(object):
             self._logger.warning("Some saved state components are None.")
         if f.is_dir(): # default name
             f = f.joinpath('saved_state.fe')
+        # Always save the compressed version of the param file.
+        if not is_compressed(self.saved_state['param_file']):
+            self.saved_state['param_file'] = compressed(self.param_file)
         joblib.dump(self.saved_state, filename=f.with_suffix('.fe'))
+
 
     def save_features(self, outpath: Path):
         outpath = Path(outpath).resolve()
@@ -531,13 +541,3 @@ class FeatureExtractor(object):
                 self.saved_state['norm_graph'] = graph
             graph_yml = self.saved_state['norm_graph']
         return graph_yml
-
-
-def zipdir(path, ziph):
-    r"""
-    Helper function to zip the norm state directory
-    """
-    # ziph is zipfile handle
-    for root, dirs, files in os.walk(path):
-        for file in files:
-            ziph.write(os.path.join(root, file), os.path.join(root, file).replace(path, ''))

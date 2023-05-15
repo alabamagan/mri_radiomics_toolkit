@@ -5,7 +5,8 @@ from pathlib import Path
 
 from mnts.mnts_logger import MNTSLogger
 from mri_radiomics_toolkit.feature_extractor import get_radiomics_features, \
-    get_radiomics_features_from_folder
+    get_radiomics_features_from_folder, FeatureExtractor
+from mri_radiomics_toolkit.utils import is_compressed
 
 
 
@@ -62,3 +63,15 @@ class Test_feature_extractor(unittest.TestCase):
                                                                   connected_components=True)
         self.assertIsInstance(extracted_features, pd.DataFrame)
         self.assertEqual(3, extracted_features.columns.nlevels)
+
+    def test_set_compressed_pyradsettings(self):
+        extractor = FeatureExtractor()
+        extractor.saved_state['param_file'] = \
+            'H4sIAG4MYmQC/31RwVLCMBC98xW5cUEGCx7oTS3DOMLIAOrB8bC023bHNImbRGEc/92UtqIXTpv3XvZt8' \
+            'pYqKHB7MBj3hHhgKkiBjMXXd4CLm1WU1LwQO1LPlLkyFqNhdHWk5M5EyRoy8rZmpydyia7UWSz6Gebgpe' \
+            'sfpVxzisFPbNlj4z4+6z5O7lJtTYmMzRjRzVnoedNoqaggFi+j4WQyjQbiciCi16DMOTSgcu1HZnujVYD' \
+            'Ufq2XIzjPeCvB2topJ7ZOc4bc+F6ImUIuDr/AsTYduvfstCXbwiXsqfJVhxDU9c5q6R0m+EHgSKs/Wntc' \
+            '65237tzltdZHffPugTFr2c0bfiq03exHRSHWilz3tidgApXW+doSmq0WMq2ayjIcehadI1XUFKOFykjMV' \
+            'rRHuTGQ1sIpz/+1Tva0qsuATMgwJNPu9AeiUQAbTAIAAA=='
+        self.assertFalse(is_compressed(extractor.param_file))
+
