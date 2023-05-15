@@ -347,9 +347,9 @@ class ModelBuilder(object):
         r"""
         Match the rows of X and y
         """
-        overlap = set(X.index.astype(str)) & set(y.index.astype(str))
-        missing_feat = set(X.index.astype(str)) - overlap
-        missing_targ = set(y.index.astype(str)) - overlap
+        overlap = X.index.astype(str).intersection(y.index.astype(str))
+        missing_feat = X.index.astype(str).difference(overlap)
+        missing_targ = y.index.astype(str).difference(overlap)
         if len(missing_feat) > 0:
             msg = ','.join(missing_feat)
             self._logger.info(f"Rows removed from features: {msg}")
