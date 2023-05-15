@@ -211,9 +211,9 @@ class Controller(object):
             gt_df = pd.read_csv(str(gt_path), index_col=0)
         elif gt_path.suffix == '.xlsx':
             gt_df = pd.read_excel(str(gt_path, index_col=0))
-        overlap_index = set(df_a.index) & set(gt_df.index)
+        overlap_index = df_a.index.intersection(gt_df.index)
         if df_b is not None:
-            overlap_index = overlap_index & set(df_b.index)
+            overlap_index = overlap_index.intersection(df_b.index)
             df_b = df_b.loc[list(overlap_index)] # pandas doesn't allow using set as indexers
         overlap_index = list(overlap_index)
 
@@ -252,11 +252,11 @@ class Controller(object):
         if (self.extractor.param_file is None) and (self.selected_features is None):
             msg = f"Param file for Pyradiomics feature extraction is not provided. The controller fitted without " \
                   f"this setting file cannot perform predictions directly on input images."
-            raise warnings.warn(msg)
+            self._logger.warning(msg)
 
-        overlap_index = set(df_a.index) & set(gt_df.index)
+        overlap_index = df_a.index.intersection(gt_df.index)
         if df_b is not None:
-            overlap_index = overlap_index & set(df_b.index)
+            overlap_index = overlap_index.intersection(df_b.index)
             df_b = df_b.loc[overlap_index]
 
         self._logger.debug(f"df_a:\n {df_a.to_string()}")
