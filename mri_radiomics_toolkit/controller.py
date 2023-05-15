@@ -1,12 +1,13 @@
 import pprint
+from io import StringIO
 from pathlib import Path
 from typing import Optional, Tuple
 
-from io import StringIO
 import joblib
 import pandas as pd
 import yaml
 from mnts.mnts_logger import MNTSLogger
+from tying import Union
 
 from . import FeatureExtractor, FeatureSelector, ModelBuilder
 
