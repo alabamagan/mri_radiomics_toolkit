@@ -99,7 +99,6 @@ optional arguments:
   --id-list ID_LIST     If specificied pass this to feature extractor.
   --keep-log            If true, the log file is saved to "pyradiomics.log"
 /home/lwong/Toolkits/Anaconda/envs/radiomics/lib/python3.8/site-packages/outdated/utils.py:14: OutdatedCheckFailedWarning: Failed to check for latest version of package.
-
 ```
 
 #### `IMG_DIR`
@@ -112,16 +111,15 @@ Directory where the segmentations are. Also needs to be `.nii.gz` files. The pro
 
 #### `ID_GLOBBER`
 
-This packages uses an ID globbed from each file name to pair the images and segmentation. This option is a regex pattern that will allow you to glob the ID from the file name excluding the suffix ".nii.gz". For example, if you have files named `001_T1w.nii.gz` and `001_seg.nii.gz`, you can pair up these tow file by specifying the globber regex as something like `"^\d+"`. 
+This packages uses an ID globbed from each file name to pair the images and segmentation. This option is a regex pattern that will allow you to glob the ID from the file name excluding the suffix ".nii.gz". For example, if you have files named `001_T1w.nii.gz` and `001_seg.nii.gz`, you can pair up these tow file by specifying the globber regex as something like `"^\d+"`.
 
 #### `ID_LIST`
 
-If you don't want to run all the images within `IMG_DIR`, you can use this option to specify the data to load. Currently there are two methods to set this option. First, explicity definition with comma separated string, e.g., `--id-list "001,002,003"`. The program will then only extract the features from the data with ID globbed as one `001`, `002`, and `003`. 
+If you don't want to run all the images within `IMG_DIR`, you can use this option to specify the data to load. Currently there are two methods to set this option. First, explicity definition with comma separated string, e.g., `--id-list "001,002,003"`. The program will then only extract the features from the data with ID globbed as one `001`, `002`, and `003`.
 
 #### `KEEP_LOG`
 
-This program uses the logger from `mntk` for logging. This could be annoying for some as if it breaks the logging system. By default, it creats a temp log file to hold all the outputs, but this temp file will be destroyed together with the main process. Use this option to prevent it. 
-
+This program uses the logger from `mntk` for logging. This could be annoying for some as if it breaks the logging system. By default, it creats a temp log file to hold all the outputs, but this temp file will be destroyed together with the main process. Use this option to prevent it.
 
 ## Feature Selector
 
@@ -178,6 +176,54 @@ fs.load("features_selected.fs")
 fs.predict(features_a.T)
 ```
 
+# DataFrame convention
+
+In this packages, the features data frame are generally configured with rows being each unique feature and columns being the data points (patients). The index typically has three levels `{1: 'Pre-processing', 2: 'FeatureGroup', 3: 'Feature_Name')`. The index is generally `pd.MultiIndex`, but sometimes, its converted to single level index `pd.Index` by maping `'_'.join`.
+
+## Convention for most internal operations
+
+```
++----------------+---------------+----------------------------------+-----------+-----------+-----------+
+| Pre-processing | Feature_Group |           Feature_Name           | Patient 1 | Patient 2 | Patient 3 |
++================+===============+==================================+===========+===========+===========+
+|    original    |     shape     | Elongation                       | 0.736071  | 0.583376  | 0.842203  |
++                +               +----------------------------------+-----------+-----------+-----------+
+|                |               | Maximum2DDiameterSlice           | 38.69644  | 40.13999  | 42.83211  |
++                +               +----------------------------------+-----------+-----------+-----------+
+|                |               | Maximum3DDiameter                | 39.47085  | 53.00941  | 44.86157  |
++                +---------------+----------------------------------+-----------+-----------+-----------+
+|                |   firstorder  | 10Percentile                     | 80        | 84        | 131       |
++                +               +----------------------------------+-----------+-----------+-----------+
+|                |               | 90Percentile                     | 167       | 198       | 221       |
++                +               +----------------------------------+-----------+-----------+-----------+
+|                |               | Mean                             | 125.0034  | 141.5715  | 177.9713  |
++                +               +----------------------------------+-----------+-----------+-----------+
+|                |               | Median                           | 126       | 143       | 182       |
++                +---------------+----------------------------------+-----------+-----------+-----------+
+|                |      glcm     | Autocorrelation                  | 32.9823   | 42.24437  | 60.84951  |
++                +               +----------------------------------+-----------+-----------+-----------+
+|                |               | ClusterProminence                | 201.2033  | 370.5453  | 213.6482  |
++                +               +----------------------------------+-----------+-----------+-----------+
+|                |               | ClusterShade                     | 3.085583  | -2.73874  | -7.56395  |
++                +---------------+----------------------------------+-----------+-----------+-----------+
+|                |     glrlm     | GrayLevelNonUniformity           | 3828.433  | 5173.855  | 6484.706  |
++                +               +----------------------------------+-----------+-----------+-----------+
+|                |               | RunVariance                      | 5.13809   | 2.925426  | 5.239695  |
++                +               +----------------------------------+-----------+-----------+-----------+
+|                |               | ShortRunEmphasis                 | 0.574203  | 0.629602  | 0.545728  |
++                +               +----------------------------------+-----------+-----------+-----------+
+|                |               | ShortRunHighGrayLevelEmphasis    | 18.43039  | 25.55685  | 32.46986  |
++                +               +----------------------------------+-----------+-----------+-----------+
+|                |               | ShortRunLowGrayLevelEmphasis     | 0.03399   | 0.030848  | 0.012844  |
++----------------+---------------+----------------------------------+-----------+-----------+-----------+
+```
+
+## Convention in fit()
+
+Regardless, the `fit()` function implemented in this package usually follows `scipy` and `sklearn` convention, where rows are data points and columns are features. This might be confusing for many, but you only need to transpose the dataframe correctly for things to work.
+
+The rule of thumb is for `fit()` function with `pd.DataFrame` feature inputs, the rows are data points and the columns are features; for other functions, the rows are features and the columsn are data points.
+
 # Reference
 
 Please consider citing this paper if you found this repository helpful for your study
@@ -194,3 +240,4 @@ Please consider citing this paper if you found this repository helpful for your 
   publisher={MDPI}
 }
 ```
+
