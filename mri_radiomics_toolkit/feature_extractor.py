@@ -14,8 +14,6 @@ import SimpleITK as sitk
 import joblib
 import numpy as np
 import pandas as pd
-import torch
-import torchio as tio
 from mnts.filters import MNTSFilterGraph
 from mnts.mnts_logger import MNTSLogger
 from mnts.scripts.normalization import run_graph_inference
@@ -53,7 +51,6 @@ def get_radiomics_features(fn: Path,
                            param_file: Path,
                            *args,
                            id_globber: str = "^[0-9a-zA-Z]+",
-                           augmentor: tio.Compose = None,
                            by_slice: int = -1,
                            connected_components = False) -> pd.DataFrame:
     r"""
@@ -75,9 +72,6 @@ def get_radiomics_features(fn: Path,
             If this is provided, they directory is treated as extra segmentation
         id_globber (str, Optional):
             Regex pattern for globbing the study ID from `fn`. Default to "^[0-9a-zA-Z]"
-        augmentor (tio.Compose, Optional):
-            If not None, the input image loaded from `fn` will be first augmented prior
-            to feature extraction. Default to `None`.
         by_slice (int, Optional):
             If an integer >= 0 is specified, the slices along the specified axis will be
             scanned one-by-one and features will be extracted from the slices with
@@ -90,6 +84,7 @@ def get_radiomics_features(fn: Path,
             `False.
     Returns:
         pd.DataFrame
+            Dataframe of featurse. Rows are features and columns are data points.
     """
     assert fn.is_file() and mn.is_file(), f"Cannot open images or mask at: {fn} and {mn}"
 
@@ -116,20 +111,6 @@ def get_radiomics_features(fn: Path,
 
             if not (np.isfinite(sitk.GetArrayFromImage(im)).all() and np.isfinite(sitk.GetArrayFromImage(_msk)).all()):
                 logger.warning(f"Detected NAN in image {str(fn    )}")
-
-        # If an augmentor is given, do augmentation first
-        if not augmentor is None:
-            # Reseed becaus multi-processing thread might fork the same random state
-            np.random.seed()
-            torch.random.seed()
-
-            logger.info(f"Augmentor was given: {augmentor}")
-            _ = {f'mask_{i}': tio.LabelMap.from_sitk(_msk) for i, _msk in enumerate(msk)}
-            subject = tio.Subject(image=tio.ScalarImage.from_sitk(im), **_)
-            logger.debug(f"Original subject: {subject}")
-            subject = augmentor.apply_transform(subject)
-            im = subject['image'].as_sitk()
-            msk = [subject[f'mask_{i}'].as_sitk() for i in range(len(msk))]
 
         #╔═════════════════════╗
         #║▐ Extract features   ║
@@ -223,7 +204,6 @@ def get_radiomics_features_from_folder(im_dir: Path,
                                        *args,
                                        id_globber: str = "^[0-9a-zA-Z]+",
                                        idlist: Iterable[str] = None,
-                                       augmentor: tio.Compose = None,
                                        **kwargs) -> pd.DataFrame:
     r"""
     This pairs up the image and the segmentation files using the global regex globber
@@ -276,7 +256,7 @@ def get_radiomics_features_from_folder(im_dir: Path,
 
     source = [im_dir.joinpath(s) for s in source]
     mask = [[mask_dir[i].joinpath(s) for s in mask[i]] for i in range(len(mask))]
-    func = partial(get_radiomics_features, id_globber=id_globber, augmentor=augmentor, **kwargs)
+    func = partial(get_radiomics_features, id_globber=id_globber, **kwargs)
 
     r"""
     Multi-thread
@@ -369,7 +349,6 @@ class FeatureExtractor(object):
                          *args,
                          idlist: Optional[Iterable[str]] = None,
                          param_file: Optional[Path] = None,
-                         augmentor: Optional[Union[tio.Compose, Path]] = None,
                          by_slice: Optional[int] = None) -> pd.DataFrame:
         if param_file is None and self.saved_state['param_file'] is None:
             raise ArithmeticError("Please specify param file.")
@@ -392,7 +371,7 @@ class FeatureExtractor(object):
             tmp_param_file.flush()
             df = get_radiomics_features_from_folder(im_path, seg_path, Path(tmp_param_file.name), *args,
                                                     id_globber=self.id_globber,
-                                                    augmentor=augmentor, idlist=idlist,
+                                                    idlist=idlist,
                                                     by_slice=by_slice)
 
         self._extracted_features = df.T
@@ -420,6 +399,10 @@ class FeatureExtractor(object):
                 `self.saved_state['param_file']` option.
             by_slice:
                 See :func:`get_radiomics_features`
+
+        Returns:
+            pd.DataFrame
+                The rows
 
         """
         with tempfile.TemporaryDirectory() as temp_root_dir:
