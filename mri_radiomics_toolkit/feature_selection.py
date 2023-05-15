@@ -755,7 +755,7 @@ class FeatureSelector(object):
                                                 return_freq=True,
                                                 boosting=self.setting['boosting'],
                                                 ICC_form=self.setting['ICC_form'])
-        if len(feats) == 0:
+        if len(feats[1]) == 0:
             msg = "No features returned. The `thres_percentage` setting might be too high, try tunning it down."
             raise ArithmeticError(msg)
         self._logger.info(f"Selected {len(feats[1])} features: {feats[1]}")
