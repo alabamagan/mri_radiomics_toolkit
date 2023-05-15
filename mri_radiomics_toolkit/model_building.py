@@ -321,9 +321,9 @@ class ModelBuilder(object):
 
         Args:
             features (pd.DataFrame):
-                Selected features.
+                Selected features. The rows should be datapoints and the columns should be features.
         Returns:
-            (dict)
+            pd.DataFrame
         """
         assert self.saved_state['estimators'] is not None, "Call fit() or load() first."
         estimators = self.saved_state['estimators']

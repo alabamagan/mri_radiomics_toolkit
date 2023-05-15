@@ -182,7 +182,7 @@ class Controller(object):
         if with_normalization is not None:
             self._with_norm = bool(with_normalization)
 
-        df_a = self.extract_feature(img_path, seg_path=seg_path)
+        df_a = self.extract_feature(img_path, seg_path=seg_path) # rows are features columns are datapoints
         df_b = self.extract_feature(img_path, seg_path=seg_b_path) if seg_b_path is not None else None
         if gt_path.suffix == '.csv':
             gt_df = pd.read_csv(str(gt_path), index_col=0)
@@ -268,7 +268,13 @@ class Controller(object):
         return self.model_builder.predict(df)
 
     def predict_df(self,
-                   img_feat: pd.DataFrame):
+                   img_feat: pd.DataFrame) -> Union[pd.Series, pd.DataFrame]:
+        r"""Directly perform prediction on input dataframe.
+
+        Args:
+            img_feat (pd.DataFrame):
+                Input features. The rows should be datapoints and the columns should be features.
+        """
         return self.model_builder.predict(self.selector.predict(img_feat))
 
     def save(self, f: Path) -> int:
