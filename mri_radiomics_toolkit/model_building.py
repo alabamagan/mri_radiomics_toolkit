@@ -116,7 +116,7 @@ def cv_grid_search(train_features: pd.DataFrame,
     best_params = {}
     best_estimators = {}
     results = {}
-    predict_table = [test_targets]
+    predict_table = [test_targets] if not test_targets is None else []
     splitter = model_selection.StratifiedKFold(n_splits=5, shuffle=True)
     for key, param_grid in param_grid_dict.items():
         logger.info("{:-^100}".format(f"Fitting for {key}"))
@@ -257,8 +257,9 @@ class ModelBuilder(object):
             self._logger.warning("Miss-match found for train data.")
             train_features, train_targets = self.match_dimension(train_features, train_targets)
         if not (test_features is None or test_targets is None):
-            self._logger.warning("Miss-match found for test data.")
-            test_features, test_targets = self.match_dimension(test_features, test_targets)
+            if not self.check_dimension(test_features, test_targets):
+                self._logger.warning("Miss-match found for test data.")
+                test_features, test_targets = self.match_dimension(test_features, test_targets)
 
         best_params, results, predict_table, best_estimators = cv_grid_search(train_features,
                                                                               train_targets,
@@ -272,11 +273,29 @@ class ModelBuilder(object):
 
     def fit(self,
             train_features: pd.DataFrame,
-            train_targets: pd.DataFrame,
-            test_features: pd.DataFrame = None,
-            test_targets: pd.DataFrame = None,
+            train_targets : pd.DataFrame,
+            test_features : Optional[pd.DataFrame] = None,
+            test_targets  : Optional[pd.DataFrame] = None,
             **kwargs) -> Tuple[pd.Series, pd.DataFrame]:
-        r"""Fit the estimator with the best performance"""
+        r"""Fit the estimator with the best performance
+
+        Args:
+            train_features (pd.DataFrame):
+                Training features. Rows should be data points and columns should be features.
+            train_targets (pd.DataFrame):
+                Training ground-truth. Each row should be a data point.
+            test_features (pd.DataFrame):
+                Testing features. Rows should be data points and columns should be features. If this is supplied,
+                the performance over the testing set would be computed. Default to `None`
+            test_targets (pd.DataFrame):
+                Testing ground. Must be supplied with `test_features.
+
+        Returns:
+            Tuple[pd.Series, pd.DataFrame]
+                The series is the performance, the data frame is the results of the prediction. If `test_features` or
+                `test_target` was not supplied, this method returns `None`.
+
+        """
         # if there are differences in the saved state and the requested classifiers
         if kwargs.get("classifiers", None) is not None and self.saved_state['estimators'] is not None:
             if isinstance(kwargs['classifiers'], str):
@@ -290,6 +309,13 @@ class ModelBuilder(object):
                     self.saved_state['estimators'] = None
                     self.saved_state['best_params'] = None
 
+        # make sure the features selected aligns for testing data
+        if not test_features is None:
+            test_features = test_features[train_features.columns]
+            # assert they are equal
+            if not test_features.columns.identical(train_features.columns):
+                raise KeyError("Features in `test_features` cannot match `train_features`.")
+
         if self.saved_state['estimators'] is None or self.saved_state['best_params'] is None:
             return self.cv_fit(train_features, train_targets, test_features, test_targets, **kwargs)
         else:
@@ -298,18 +324,19 @@ class ModelBuilder(object):
             best_estimators = self.saved_state['estimators']
 
             results = {}
-            predict_table = [test_targets]
+            predict_table = [test_targets] if not test_targets is None else []
             for key, estimator in best_estimators.items():
                 estimator.fit(train_features, train_targets.values.ravel())
                 if not (test_features is None or test_targets is None):
-                    y = estimator.predict(test_features.values)
                     train_y = estimator.predict(train_features.values)
                     train_score = metrics.roc_auc_score(y_true=train_targets.values.ravel(),
                                                         y_score=train_y)
-                    test_score = metrics.roc_auc_score(y_true=test_targets.values.ravel(),
-                                                       y_score=y)
-                    results[f'{key}'] = test_score
                     results[f'{key} (train)'] = train_score
+                    if test_targets is not None and test_features is not None:
+                        y = estimator.predict(test_features.values)
+                        test_score = metrics.roc_auc_score(y_true=test_targets.values.ravel(),
+                                                           y_score=y)
+                        results[f'{key}'] = test_score
                     predict_table.append(pd.Series(y, index=test_targets.index, name=f"{key}"))
             predict_table = pd.concat(predict_table, axis=1)
             results = pd.Series(results)
@@ -347,13 +374,14 @@ class ModelBuilder(object):
         r"""
         Match the rows of X and y
         """
-        overlap = X.index.astype(str).intersection(y.index.astype(str))
-        missing_feat = X.index.astype(str).difference(overlap)
-        missing_targ = y.index.astype(str).difference(overlap)
+        overlap = X.index.intersection(y.index)
+        missing_feat = X.index.difference(overlap)
+        missing_targ = y.index.difference(overlap)
+
         if len(missing_feat) > 0:
-            msg = ','.join(missing_feat)
+            msg = ','.join([str(r) for r in missing_feat])
             self._logger.info(f"Rows removed from features: {msg}")
         if len(missing_targ) > 0:
-            msg = ','.join(missing_targ)
+            msg = ','.join([str (r) for r in missing_targ])
             self._logger.info(f"Rows removed from targets: {msg}")
         return X.loc[overlap], y.loc[overlap]

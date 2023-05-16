@@ -199,7 +199,8 @@ def filter_features_by_T_test(features: pd.DataFrame,
         # If key error use the first column
         T = target[target.columns[0]]
     classes = list(set(T))
-
+    if len(classes) == 1:
+        raise ArithmeticError("There is only one class in the data set.")
 
     # Get a list of ids for patients with different classes
     patients_lists = {c: target.loc[T == c].index.tolist() for c in classes}
@@ -542,7 +543,7 @@ def features_selection(features_a: pd.DataFrame,
                                                 n_features=25,
                                                 boosting=boosting)
     logger.debug(f"in features: \n{feats_a.sort_index(level=0)}")
-    logger.info(f"The selected features: \n{feats_a_out}")
+    logger.info(f"The selected features: \n{feats_a_out.index}")
     # classification models
     return feats_a_out
 

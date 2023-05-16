@@ -120,7 +120,6 @@ class Controller(object):
             _s = settings_loaded['Extractor']
             id_globber = _s.get('id_globber', "^\w*")
             self.extractor.id_globber = id_globber
-            self._logger.info(f"Updating extractor setting: {id_globber}")
             param_file = _s.get('pyrad_param_file', None)
             if not param_file is None:
                 self.extractor.param_file = param_file  # the extractor handles it itself
@@ -128,6 +127,7 @@ class Controller(object):
             else:
                 msg = "No pyrad param file was found in saved state."
                 self._logger.warning(msg)
+            self._logger.info(f"Updating extractor setting: {pprint.pformat(_s)}")
 
         if 'Controller' in settings_loaded.keys():
             _s = settings_loaded['Controller']
