@@ -5,6 +5,8 @@ import tempfile
 import shutil
 import pprint
 from pathlib import Path
+
+import sklearn.model_selection
 from mnts.mnts_logger import MNTSLogger
 from mri_radiomics_toolkit import *
 from mri_radiomics_toolkit.perf_metric import getStability, confidenceIntervals, hypothesisTestT, \
@@ -327,6 +329,26 @@ class Test_pipeline(unittest.TestCase):
             _ctl = Controller()
             _ctl.load(f.name)
             self._logger.info(f"Saved state: {_ctl.saved_state}")
+
+    def test_controller_fit_df(self):
+        # This could take a while
+        p_feat_a = Path('test_data/assets/samples_feat_1st.xlsx')
+        p_gt = Path('test_data/assets/sample_datasheet.csv')
+        p_controller_setting = Path('test_data/assets/sample_controller_settings.yml')
+
+        feat = pd.read_excel(p_feat_a, index_col = [0, 1, 2]).T
+        feat.drop('diagnostics', axis=1, inplace=True)
+        gt   = pd.read_csv(p_gt      , index_col = 0)
+        overlap = feat.index.intersection(gt.index)
+        feat = feat.loc[overlap]
+        gt = gt.loc[overlap]
+        assert feat.index.identical(gt.index), f"{feat.index.difference(gt.index)}"
+
+        X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(feat, gt, test_size=0.5)
+        assert X_train.index.identical(y_train.index)
+
+        ctl = Controller(setting=p_controller_setting, with_norm=False)
+        res, table = ctl.fit_df(X_train, y_train, test_features=X_test, test_targets=y_test)
 
     def test_stability_metric(self):
         test_result = {x: "Untested" for x in ['Binary feature map',
