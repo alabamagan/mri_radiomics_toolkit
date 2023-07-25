@@ -376,7 +376,11 @@ class FeatureExtractor(object):
                 self.param_file = param_file.open('r').read() # this will read param file to str and store it in
                                                               # saved_state
             elif isinstance(param_file, str):
-                self.param_file = param_file
+                # if the param_file is a string, test if its compressed
+                if is_compressed(param_file):
+                    self.param_file = decompress(param_file)
+                else:
+                    self.param_file = param_file
             elif param_file is None:
                 raise FileNotFoundError(f"Cannot open pyrad param file: {param_file}")
         except OSError: # Prevent returning file name too long error
