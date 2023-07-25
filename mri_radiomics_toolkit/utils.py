@@ -3,6 +3,9 @@ import base64
 import io
 import os
 
+import pandas as pd
+from multiprocessing import Queue, Process
+from pathlib import Path
 
 def compress(in_str):
     r"""Compresses a string using gzip and base64 encodes it.
@@ -65,3 +68,82 @@ def zipdir(path, ziph):
     for root, dirs, files in os.walk(path):
         for file in files:
             ziph.write(os.path.join(root, file), os.path.join(root, file).replace(path, ''))
+
+
+class ExcelWriterProcess:
+    r"""
+    A class that wraps a separate process which writes pandas Series to an Excel file.
+
+    Attributes:
+        output_file (str):
+            The path to the output Excel file.
+        queue (multiprocessing.Queue):
+            The queue for communication between processes.
+        process (multiprocessing.Process):
+            The subprocess that does the writing.
+    """
+    def __init__(self, output_file):
+        r"""Initialize the ExcelWriterProcess with an output file path.
+
+        Args:
+            output_file (str): The path to the output Excel file.
+        """
+        self.output_file = output_file
+        self.queue = Queue()
+        self.process = Process(target=self._run, args=(self.queue, self.output_file))
+
+        # p_output_file = Path(output_file)
+        # if not p_output_file.is_file():
+        #     f = p_output_file.open('w')
+        #     f.close()
+
+
+    def start(self):
+        r"""Start the writer subprocess.
+        """
+        self.process.start()
+
+    def write(self, series):
+        r"""Send a pandas Series to the writer subprocess to write it to the Excel file.
+
+        Args:
+            series (pd.Series): The pandas Series to write.
+        """
+        self.queue.put(series)
+
+    def stop(self):
+        """
+        Stop the writer subprocess and wait for it to finish.
+        """
+        self.queue.put(None)  # Signal to stop processing
+        self.process.join()  # Wait for the process to finish
+
+    @staticmethod
+    def _run(queue, output_file):
+        """The function that runs in the writer subprocess, which writes pandas Series to the Excel file.
+
+        Args:
+            queue (multiprocessing.Queue): The queue for receiving pandas Series from the main process.
+            output_file (str): The output file where the series will be written to.
+        """
+        try:
+            while True:
+                series = queue.get()
+                if series is None:  # Check if it's the signal to stop processing
+                    break
+                mode = 'a' if Path(output_file).is_file() else 'w'
+
+                # Open the Excel file and append the new series as a new column
+                with pd.ExcelWriter(output_file,
+                                    engine='openpyxl',
+                                    mode=mode,
+                                    if_sheet_exists='overlay' if mode == 'a' else None) as writer:
+                    sheetnames = list(writer.sheets.keys())
+                    default_sheet = sheetnames[0] if len(sheetnames) > 1 else 'Sheet1'
+                    series.to_frame().to_excel(
+                        writer,
+                        index = mode != 'a',  # No need to write index if columns are appended
+                        startcol=writer.sheets[default_sheet].max_column if mode == 'a' else 0
+                    )
+        except Exception as e:
+            print(f"An error occurred: {e}")

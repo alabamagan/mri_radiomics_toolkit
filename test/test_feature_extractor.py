@@ -6,8 +6,8 @@ from pathlib import Path
 
 from mnts.mnts_logger import MNTSLogger
 from mri_radiomics_toolkit.feature_extractor import get_radiomics_features, \
-    get_radiomics_features_from_folder, FeatureExtractor, ExcelWriterProcess
-from mri_radiomics_toolkit.utils import is_compressed, compress, decompress
+    get_radiomics_features_from_folder, FeatureExtractor
+from mri_radiomics_toolkit.utils import is_compressed, compress, decompress, ExcelWriterProcess
 
 
 

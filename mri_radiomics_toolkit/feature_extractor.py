@@ -20,8 +20,7 @@ from mnts.mnts_logger import MNTSLogger
 from mnts.scripts.normalization import run_graph_inference
 from mnts.utils import get_unique_IDs, load_supervised_pair_by_IDs, repeat_zip
 from radiomics import featureextractor
-from multiprocessing import Queue, Process
-from .utils import zipdir, compress, decompress, is_compressed
+from .utils import zipdir, compress, decompress, is_compressed, ExcelWriterProcess
 
 
 # Fix logger
@@ -56,7 +55,8 @@ def get_radiomics_features(fn: Path,
                            *args,
                            id_globber: str = "^[0-9a-zA-Z]+",
                            by_slice: int = -1,
-                           connected_components = False) -> pd.DataFrame:
+                           connected_components = False,
+                           writer: ExcelWriterProcess = None) -> pd.DataFrame:
     r"""
     Return the features computed by pyramdiomics in a `pd.DataFrame` structure. This data
     output will at most has three column levels. The primary level is `Study number`,
@@ -196,6 +196,11 @@ def get_radiomics_features(fn: Path,
         logger.debug(f"Intermediate result:\n {out}")
         _end_time = time.time()
         logger.debug(f"Finsihed extracting features, time took: {_end_time - _start_time}s")
+
+        # If writer is provided, write it
+        if writer is not None:
+            writer.write
+
         return out
 
     except Exception as e:
@@ -551,83 +556,3 @@ class FeatureExtractor(object):
                 self.saved_state['norm_graph'] = graph
             graph_yml = self.saved_state['norm_graph']
         return graph_yml
-
-
-
-class ExcelWriterProcess:
-    r"""
-    A class that wraps a separate process which writes pandas Series to an Excel file.
-
-    Attributes:
-        output_file (str):
-            The path to the output Excel file.
-        queue (multiprocessing.Queue):
-            The queue for communication between processes.
-        process (multiprocessing.Process):
-            The subprocess that does the writing.
-    """
-    def __init__(self, output_file):
-        r"""Initialize the ExcelWriterProcess with an output file path.
-
-        Args:
-            output_file (str): The path to the output Excel file.
-        """
-        self.output_file = output_file
-        self.queue = Queue()
-        self.process = Process(target=self._run, args=(self.queue, self.output_file))
-
-        # p_output_file = Path(output_file)
-        # if not p_output_file.is_file():
-        #     f = p_output_file.open('w')
-        #     f.close()
-
-
-    def start(self):
-        r"""Start the writer subprocess.
-        """
-        self.process.start()
-
-    def write(self, series):
-        r"""Send a pandas Series to the writer subprocess to write it to the Excel file.
-
-        Args:
-            series (pd.Series): The pandas Series to write.
-        """
-        self.queue.put(series)
-
-    def stop(self):
-        """
-        Stop the writer subprocess and wait for it to finish.
-        """
-        self.queue.put(None)  # Signal to stop processing
-        self.process.join()  # Wait for the process to finish
-
-    @staticmethod
-    def _run(queue, output_file):
-        """The function that runs in the writer subprocess, which writes pandas Series to the Excel file.
-
-        Args:
-            queue (multiprocessing.Queue): The queue for receiving pandas Series from the main process.
-            output_file (str): The output file where the series will be written to.
-        """
-        try:
-            while True:
-                series = queue.get()
-                if series is None:  # Check if it's the signal to stop processing
-                    break
-                mode = 'a' if Path(output_file).is_file() else 'w'
-
-                # Open the Excel file and append the new series as a new column
-                with pd.ExcelWriter(output_file,
-                                    engine='openpyxl',
-                                    mode=mode,
-                                    if_sheet_exists='overlay' if mode == 'a' else None) as writer:
-                    sheetnames = list(writer.sheets.keys())
-                    default_sheet = sheetnames[0] if len(sheetnames) > 1 else 'Sheet1'
-                    series.to_frame().to_excel(
-                        writer,
-                        index = mode != 'a',  # No need to write index if columns are appended
-                        startcol=writer.sheets[default_sheet].max_column if mode == 'a' else 0
-                    )
-        except Exception as e:
-            print(f"An error occurred: {e}")
