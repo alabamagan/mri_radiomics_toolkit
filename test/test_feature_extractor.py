@@ -6,7 +6,7 @@ from pathlib import Path
 
 from mnts.mnts_logger import MNTSLogger
 from mri_radiomics_toolkit.feature_extractor import get_radiomics_features, \
-    get_radiomics_features_from_folder, FeatureExtractor
+    get_radiomics_features_from_folder, FeatureExtractor, ExcelWriterProcess
 from mri_radiomics_toolkit.utils import is_compressed, compress, decompress
 
 
@@ -28,6 +28,7 @@ class Test_feature_extractor(unittest.TestCase):
 
     def setUp(self):
         self._logger = self.cls_logger
+        self._logger.set_global_verbosity('debug')
 
         # set up test data
         self.sample_img_dir = Path("test_data/image_mul_label")
@@ -91,3 +92,28 @@ class Test_feature_extractor(unittest.TestCase):
             extractor.load(Path(tempdir) / 'test.fe')
             self.assertEqual(extractor.param_file,
                              decompress(compressed_param_file))
+
+    def test_writerprocess(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            writer = ExcelWriterProcess(tempdir + "/temp.xlsx")
+            writer.start()
+
+            test_series1 = pd.Series(data=[1, 2, 3], index=['A', 'B', 'C'], name='test1')
+            test_series2 = pd.Series(data=[1, 2, 3], index=['A', 'B', 'C'], name='test2')
+            writer.write(test_series1)
+            writer.stop()
+
+            # check if an excel is created
+            self.assertTrue(Path(tempdir + "/temp.xlsx").is_file())
+
+            # append another series
+            writer = ExcelWriterProcess(tempdir + "/temp.xlsx")
+            writer.start()
+            writer.write(test_series2)
+            writer.stop()
+
+            # Check if the program is running correctly
+            df_expected = pd.concat([test_series1, test_series2], axis=1)
+            df = pd.read_excel(tempdir + "/temp.xlsx", index_col=0)
+
+            self.assertTrue(df.equals(df_expected))
