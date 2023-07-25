@@ -8,7 +8,7 @@ import time
 from functools import partial
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable, Optional, Sequence, Union
+from typing import Iterable, Optional, Sequence, Union, Callable
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import SimpleITK as sitk
@@ -56,7 +56,7 @@ def get_radiomics_features(fn: Path,
                            id_globber: str = "^[0-9a-zA-Z]+",
                            by_slice: int = -1,
                            connected_components = False,
-                           writer: ExcelWriterProcess = None) -> pd.DataFrame:
+                           writer_func: Callable = None) -> pd.DataFrame:
     r"""
     Return the features computed by pyramdiomics in a `pd.DataFrame` structure. This data
     output will at most has three column levels. The primary level is `Study number`,
@@ -86,6 +86,9 @@ def get_radiomics_features(fn: Path,
             If True, convert the msk into binary mask and then perform connected body
             filter to separate the mask into node island before extraction. Default to
             `False.
+        writer (ExcelWriterProcess, Optional):
+            If not `None`, the data will be streamed to the specified file after each data
+            is processed.
     Returns:
         pd.DataFrame
             Dataframe of featurse. Rows are features and columns are data points.
@@ -198,8 +201,8 @@ def get_radiomics_features(fn: Path,
         logger.debug(f"Finsihed extracting features, time took: {_end_time - _start_time}s")
 
         # If writer is provided, write it
-        if writer is not None:
-            writer.write
+        if writer_func is not None:
+            writer_func(out)
 
         return out
 
@@ -225,23 +228,29 @@ def get_radiomics_features_from_folder(im_dir: Path,
         param_file (Path):
             Path to the pyradiomics setting.
         idlist (list):
+            A list of IDs for extraction.
 
         *args:
             If this exist, arguments will be attached to `mask_dir`, additional features will be extracted
             if there are more than one masks
+
 
     Return:
         pd.DataFrame
     """
     logger = MNTSLogger['radiomics_features']
     ids = get_unique_IDs(list([str(i.name) for i in im_dir.iterdir()]), id_globber)
+
+    # Check if provided ID list can be found in the specified folder
     if not idlist is None:
         overlap = set.intersection(set(ids), set(idlist))
         missing_idlist = set(idlist) - set(ids)
         missing_files = set(ids) - set(idlist)
         if len(missing_idlist):
+            # IDs that are not found in the target folder
             logger.warning(f"Some of the specified ids cannot be founded: \n {missing_idlist}")
         if len(missing_files):
+            # IDs that are not found in the specified idlist
             logger.info(f"IDs filtered away: {missing_files}")
         ids = overlap
 
@@ -286,14 +295,36 @@ def get_radiomics_features_from_folder(im_dir: Path,
     return df
 
 class FeatureExtractor(object):
-    r"""
+    r"""`FeatureExtractor` is a class for extracting features from image data based on given parameters.
+    Features extracted are stored in a pandas DataFrame.
+
     Attributes:
-        _extracted_features (pd.DataFrame):
-            Features extracted using the parameter file
+        DEFAULT_NORM_STATE (pathlib.Path):
+            Default path for normalization state, located in "assets/t2wfs".
+        id_globber (str):
+            A regex pattern to be used for globbing IDs. Defaults to "^[0-9a-zA-Z]+".
+        idlist (list):
+            A list of IDs to be used. Defaults to None.
+        param_file (str or pathlib.Path):
+            Path to a file containing parameters for feature extraction. Can also be a YAML-formatted string.
+            Defaults to None.
+        by_slice (int):
+            The slice number to be used. Defaults to -1.
+        _extracted_features (pd.DataFrame
+            ): A DataFrame storing the features extracted.
+        _logger (Logger
+            ): A logging object.
 
-    Examples:
+    Example:
         >>> fe = FeatureExtractor()
+        >>> fe.extract_features(im_path, seg_path, idlist=id_list, param_file=param_file_path)
+        >>> fe.save_features(output_path)
 
+    .. notes::
+        The `param_file` attribute can be a path pointing to a YAML file containing extraction parameters.
+        Alternatively, it can be a string formatted in YAML, which directly specifies the parameters.
+        The `idlist` attribute should be a list of identifiers corresponding to the images from which features
+        will be extracted.
     """
     DEFAULT_NORM_STATE = Path(__file__).parent.joinpath("assets/t2wfs").resolve()
 
@@ -327,9 +358,15 @@ class FeatureExtractor(object):
             self.saved_state['param_file'] = v
 
     def load(self, f: Path):
-        r"""
-        Load att `self.save_state`. The file saved should be a dictionary containing key 'selected_features', which
+        r"""Load att `self.save_state`. The file saved should be a dictionary containing key 'selected_features', which
         points to a list of features in the format of pd.MultiIndex or tuple
+
+        Args:
+            f (pathlib.Path): The path to the file from which the state should be loaded.
+
+        Raises:
+            AssertionError: If the file does not exist.
+            TypeError: If the loaded state is not a dictionary.
         """
         assert Path(f).is_file(), f"Cannot open file {f}"
         d = joblib.load(f)
@@ -338,6 +375,11 @@ class FeatureExtractor(object):
         self.saved_state.update(d)
 
     def save(self, f: Path):
+        r"""Save the current state to a file.
+
+        Args:
+            f (pathlib.Path): The path to the file where the state should be saved.
+        """
         if any([v is None for v in self.saved_state.values()]):
             self._logger.warning("Some saved state components are None.")
         if f.is_dir(): # default name
@@ -349,6 +391,15 @@ class FeatureExtractor(object):
 
 
     def save_features(self, outpath: Path):
+        """Save the extracted features to an Excel or CSV file.
+
+        Args:
+            outpath (pathlib.Path):
+                The path where the features should be saved. The file type is determined by the suffix.
+
+        Raises:
+            AssertionError: If the parent directory does not exist.
+        """
         outpath = Path(outpath).resolve()
         assert outpath.parent.is_dir(), f"Cannot save to: {outpath}"
         if outpath.suffix == '':
@@ -365,7 +416,33 @@ class FeatureExtractor(object):
                          *args,
                          idlist: Optional[Iterable[str]] = None,
                          param_file: Optional[Path] = None,
-                         by_slice: Optional[int] = None) -> pd.DataFrame:
+                         by_slice: Optional[int] = -1,
+                         writer: Optional[ExcelWriterProcess] = None) -> pd.DataFrame:
+        """Extract features from image data based on the given parameters.
+
+        Args:
+            im_path (pathlib.Path):
+                The path to the image data.
+            seg_path (pathlib.Path):
+                The path to the segmentation data.
+            idlist (Iterable[str], optional):
+                A list of IDs to be used. Defaults to None.
+            param_file (str or pathlib.Path, optional):
+                Path to a file containing parameters for feature extraction.
+                Can also be a YAML-formatted string. Defaults to None.
+            by_slice (int, optional):
+                Whether to extract the features slice-by-slice and which axis to step. See
+                :func:`get_radiomics_features` for details. Defaults to -1.
+            writer (ExcelWriterProcess, optional):
+                An ExcelWriterProcess object for writing the output data. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The DataFrame containing the extracted features.
+
+        Raises:
+            ArithmeticError: If no param file is specified.
+            FileNotFoundError: If the param file does not exist.
+        """
         if param_file is None and self.saved_state['param_file'] is None:
             raise ArithmeticError("Please specify param file.")
         if param_file is None:
@@ -397,7 +474,8 @@ class FeatureExtractor(object):
             df = get_radiomics_features_from_folder(im_path, seg_path, Path(tmp_param_file.name), *args,
                                                     id_globber=self.id_globber,
                                                     idlist=idlist,
-                                                    by_slice=by_slice)
+                                                    by_slice=by_slice,
+                                                    writer=writer)
 
         self._extracted_features = df.T
         if self._extracted_features.index.nlevels > 1:

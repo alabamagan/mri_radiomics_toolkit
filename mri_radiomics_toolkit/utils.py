@@ -4,7 +4,8 @@ import io
 import os
 
 import pandas as pd
-from multiprocessing import Queue, Process
+from typing import Optional, Union, Any
+from multiprocessing import Queue, Manager, Process
 from pathlib import Path
 
 def compress(in_str):
@@ -72,7 +73,7 @@ def zipdir(path, ziph):
 
 class ExcelWriterProcess:
     r"""
-    A class that wraps a separate process which writes pandas Series to an Excel file.
+    A singleton class that wraps a separate process which writes pandas Series to an Excel file.
 
     Attributes:
         output_file (str):
@@ -82,54 +83,58 @@ class ExcelWriterProcess:
         process (multiprocessing.Process):
             The subprocess that does the writing.
     """
-    def __init__(self, output_file):
+    _instance = None
+    def __init__(self, output_file: Union[Path, str]):
         r"""Initialize the ExcelWriterProcess with an output file path.
 
         Args:
             output_file (str): The path to the output Excel file.
         """
+        self.manager = Manager()
+        self.queue = self.manager.Queue()
         self.output_file = output_file
-        self.queue = Queue()
         self.process = Process(target=self._run, args=(self.queue, self.output_file))
 
-        # p_output_file = Path(output_file)
-        # if not p_output_file.is_file():
-        #     f = p_output_file.open('w')
-        #     f.close()
-
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 
     def start(self):
-        r"""Start the writer subprocess.
-        """
+        r"""Start the writer subprocess."""
         self.process.start()
 
-    def write(self, series):
+    @classmethod
+    def write(cls, data: Union[pd.Series, pd.DataFrame]) -> None:
         r"""Send a pandas Series to the writer subprocess to write it to the Excel file.
 
         Args:
-            series (pd.Series): The pandas Series to write.
+            data (pd.Series or pd.DataFrame): The pandas Series to write.
         """
-        self.queue.put(series)
+        if cls._instance is None:
+            raise ArithmeticError("Write must only be called after a writer instance is created.")
+        # if not cls._instance.process.is_alive():
+        #     raise RuntimeError("ExcelWriterProcess.write is called but no process is alive. Have you called start()?")
+        instance = cls._instance
+        instance.queue.put(data)
 
-    def stop(self):
-        """
-        Stop the writer subprocess and wait for it to finish.
-        """
+    def stop(self) -> None:
+        """Stop the writer subprocess and wait for it to finish."""
         self.queue.put(None)  # Signal to stop processing
         self.process.join()  # Wait for the process to finish
 
     @staticmethod
-    def _run(queue, output_file):
+    def _run(queue: Queue, output_file: Union[str, Path]) -> None:
         """The function that runs in the writer subprocess, which writes pandas Series to the Excel file.
 
         Args:
             queue (multiprocessing.Queue): The queue for receiving pandas Series from the main process.
             output_file (str): The output file where the series will be written to.
         """
-        try:
-            while True:
-                series = queue.get()
-                if series is None:  # Check if it's the signal to stop processing
+        while True:
+            try:
+                data = queue.get()
+                if data is None:  # Check if it's the signal to stop processing
                     break
                 mode = 'a' if Path(output_file).is_file() else 'w'
 
@@ -140,10 +145,15 @@ class ExcelWriterProcess:
                                     if_sheet_exists='overlay' if mode == 'a' else None) as writer:
                     sheetnames = list(writer.sheets.keys())
                     default_sheet = sheetnames[0] if len(sheetnames) > 1 else 'Sheet1'
-                    series.to_frame().to_excel(
+                    # Convert pd.Series to pd.DataFrame for writing
+                    if isinstance(data, pd.Series):
+                        data = data.to_frame()
+                    data.to_excel(
                         writer,
                         index = mode != 'a',  # No need to write index if columns are appended
                         startcol=writer.sheets[default_sheet].max_column if mode == 'a' else 0
                     )
-        except Exception as e:
-            print(f"An error occurred: {e}")
+            except BrokenPipeError:
+                continue
+            except Exception as e:
+                print(f"An error occurred: {e}")

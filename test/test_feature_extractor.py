@@ -10,7 +10,6 @@ from mri_radiomics_toolkit.feature_extractor import get_radiomics_features, \
 from mri_radiomics_toolkit.utils import is_compressed, compress, decompress, ExcelWriterProcess
 
 
-
 class Test_feature_extractor(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(Test_feature_extractor, self).__init__(*args, **kwargs)
@@ -28,11 +27,12 @@ class Test_feature_extractor(unittest.TestCase):
 
     def setUp(self):
         self._logger = self.cls_logger
-        self._logger.set_global_verbosity('debug')
 
         # set up test data
         self.sample_img_dir = Path("test_data/image_mul_label")
         self.sample_seg_dir = Path("test_data/segment_mul_label")
+        self.sample_img_dir_mpi = Path("test_data/images")
+        self.sample_seg_dir_mpi = Path("test_data/segment")
 
         # single sample pair
         self.sample_img_1 = Path("test_data/image_mul_label/TEST01_img_t2wfs.nii.gz")
@@ -56,6 +56,14 @@ class Test_feature_extractor(unittest.TestCase):
                                                                   by_slice = 2)
         self.assertIsInstance(extracted_features, pd.DataFrame)
         self.assertEqual(3, extracted_features.columns.nlevels)
+
+    def test_mpi_extract_features(self):
+        df = get_radiomics_features_from_folder(self.sample_img_dir_mpi,
+                                               self.sample_seg_dir_mpi,
+                                               self.settings_1,
+                                               id_globber="MRI_\d+")
+        self.assertGreater(len(df), 0)
+
 
     def test_get_radiomics_features_conn(self):
         extracted_features: pd.DataFrame = get_radiomics_features(self.sample_img_1,
@@ -93,7 +101,7 @@ class Test_feature_extractor(unittest.TestCase):
             self.assertEqual(extractor.param_file,
                              decompress(compressed_param_file))
 
-    def test_writerprocess(self):
+    def test_excel_writer_process(self):
         with tempfile.TemporaryDirectory() as tempdir:
             writer = ExcelWriterProcess(tempdir + "/temp.xlsx")
             writer.start()
@@ -112,8 +120,31 @@ class Test_feature_extractor(unittest.TestCase):
             writer.write(test_series2)
             writer.stop()
 
-            # Check if the program is running correctly
+            # Check if the program is running correctly so far
             df_expected = pd.concat([test_series1, test_series2], axis=1)
-            df = pd.read_excel(tempdir + "/temp.xlsx", index_col=0)
-
+            df = pd.read_excel(tempdir + "/temp.xlsx", index_col=0, engine='openpyxl')
             self.assertTrue(df.equals(df_expected))
+
+            # test if writing dataframe works
+            df.columns = ['test3', 'test4']
+            writer = ExcelWriterProcess(tempdir + "/temp.xlsx")
+            writer.start()
+            writer.write(df)
+            writer.stop()
+            df_expected = pd.concat([df_expected, df], axis=1)
+            df = pd.read_excel(tempdir + "/temp.xlsx", index_col=0)
+            self.assertTrue(df.equals(df_expected))
+
+    def test_extract_feature_with_stream_writing(self):
+        with tempfile.TemporaryDirectory() as f:
+            temp_excelfile = f + '/temp.xlsx'
+            writer = ExcelWriterProcess(temp_excelfile)
+            writer.start()
+            df = get_radiomics_features_from_folder(self.sample_img_dir_mpi,
+                                                   self.sample_seg_dir_mpi,
+                                                   self.settings_1,
+                                                   id_globber="MRI_\d+",
+                                                   writer_func=ExcelWriterProcess.write)
+            writer.stop()
+
+            saved_df = pd.read_excel(temp_excelfile, index_col=[0, 1, 2], engine='openpyxl')
