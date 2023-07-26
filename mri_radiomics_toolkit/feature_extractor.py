@@ -8,13 +8,14 @@ import time
 from functools import partial
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable, Optional, Sequence, Union, Callable
+from typing import Iterable, Optional, Sequence, Union, Callable, Tuple, Any
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import SimpleITK as sitk
 import joblib
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 from mnts.filters import MNTSFilterGraph
 from mnts.mnts_logger import MNTSLogger
 from mnts.scripts.normalization import run_graph_inference
@@ -49,6 +50,13 @@ NyulNormalizer:
 
 """
 
+def progress_bar_helper(_, pbar: Callable = None) -> None:
+    r"""Helper function to update a progress bar for mpi progress monitoring."""
+    if pbar is None:
+        raise ValueError("No progress bar.")
+    pbar.update()
+
+
 def get_radiomics_features(fn: Path,
                            mn: Path,
                            param_file: Path,
@@ -56,7 +64,8 @@ def get_radiomics_features(fn: Path,
                            id_globber: str = "^[0-9a-zA-Z]+",
                            by_slice: int = -1,
                            connected_components = False,
-                           writer_func: Callable = None) -> pd.DataFrame:
+                           writer_func: Optional[Callable] = None,
+                           mpi_progress: Optional[Tuple[Any, Any]] = None) -> pd.DataFrame:
     r"""
     Return the features computed by pyramdiomics in a `pd.DataFrame` structure. This data
     output will at most has three column levels. The primary level is `Study number`,
@@ -86,12 +95,13 @@ def get_radiomics_features(fn: Path,
             If True, convert the msk into binary mask and then perform connected body
             filter to separate the mask into node island before extraction. Default to
             `False.
-        writer (ExcelWriterProcess, Optional):
+        writer_func (Callable, Optional):
             If not `None`, the data will be streamed to the specified file after each data
-            is processed.
+            is processed. The callable provided is called after the calculations are done
+            with syntax `writer_func(df)`. Default to `None`
     Returns:
-        pd.DataFrame
-            Dataframe of featurse. Rows are features and columns are data points.
+        pd.DataFrame:
+            DataFrame of features. Rows are features and columns are data points.
     """
     assert fn.is_file() and mn.is_file(), f"Cannot open images or mask at: {fn} and {mn}"
 
@@ -198,12 +208,17 @@ def get_radiomics_features(fn: Path,
             out = pd.concat(dfs, axis=1)
         logger.debug(f"Intermediate result:\n {out}")
         _end_time = time.time()
-        logger.debug(f"Finsihed extracting features, time took: {_end_time - _start_time}s")
+        logger.info(f"Finsihed extracting features, time took: {_end_time - _start_time}s")
 
         # If writer is provided, write it
         if writer_func is not None:
             writer_func(out)
 
+        # Update progress
+        if isinstance(mpi_progress, tuple):
+            lock, progress = mpi_progress
+            with lock:
+                progress.value += 1
         return out
 
     except Exception as e:
@@ -274,7 +289,6 @@ def get_radiomics_features_from_folder(im_dir: Path,
 
     source = [im_dir.joinpath(s) for s in source]
     mask = [[mask_dir[i].joinpath(s) for s in mask[i]] for i in range(len(mask))]
-    func = partial(get_radiomics_features, id_globber=id_globber, **kwargs)
 
     r"""
     Multi-thread
@@ -283,11 +297,32 @@ def get_radiomics_features_from_folder(im_dir: Path,
         z = repeat_zip(source, mask[0], [param_file])
     else:
         z = repeat_zip(source, mask[0], [param_file], *mask[1:])
-    pool = mpi.Pool(mpi.cpu_count())
-    res = pool.starmap_async(func, z)
-    pool.close()
-    pool.join()
-    res = res.get()
+
+    with mpi.Manager() as manager:
+        # configure the progress bar
+        progress = manager.Value('i', 0)
+        pbar = tqdm(total=len(source), desc="Feature extraction")
+
+        # create the worker pool
+        pool = mpi.Pool(mpi.cpu_count()) # pyradiomics also runs in multi-thread
+        func = partial(get_radiomics_features,
+                       id_globber=id_globber,
+                       mpi_progress=(manager.Lock(), progress), **kwargs)
+        res = pool.starmap_async(func, z)
+
+        # Update progress bar
+        while not res.ready() or progress.value < len(source):
+            pbar.n = progress.value
+            pbar.refresh()
+            time.sleep(0.1)
+
+        # close the pool
+        pool.close()
+        pool.join()
+        res = res.get()
+
+        # closs the pbar
+        pbar.close()
     df = pd.concat(res, axis=1)
     new_index = [o.split('_') for o in df.index]
     new_index = pd.MultiIndex.from_tuples(new_index, names=('Pre-processing', 'Feature_Group', 'Feature_Name'))
@@ -417,7 +452,7 @@ class FeatureExtractor(object):
                          idlist: Optional[Iterable[str]] = None,
                          param_file: Optional[Path] = None,
                          by_slice: Optional[int] = -1,
-                         writer: Optional[ExcelWriterProcess] = None) -> pd.DataFrame:
+                         stream_output: Optional[bool] = None) -> pd.DataFrame:
         """Extract features from image data based on the given parameters.
 
         Args:
@@ -433,8 +468,9 @@ class FeatureExtractor(object):
             by_slice (int, optional):
                 Whether to extract the features slice-by-slice and which axis to step. See
                 :func:`get_radiomics_features` for details. Defaults to -1.
-            writer (ExcelWriterProcess, optional):
-                An ExcelWriterProcess object for writing the output data. Defaults to None.
+            stream_output (bool, optional):
+                If this is `True`, program will try to stream output using :class:`ExcelWriterProcess`.
+                Defaults to `False`.
 
         Returns:
             pd.DataFrame: The DataFrame containing the extracted features.
@@ -471,11 +507,16 @@ class FeatureExtractor(object):
         with tempfile.NamedTemporaryFile('w', suffix='.yml') as tmp_param_file:
             tmp_param_file.write(self.param_file)
             tmp_param_file.flush()
+            if stream_output:
+                # make sure writer is read
+                if ExcelWriterProcess._instance is None:
+                    raise ArithmeticError("Stream output is ON but writer was not prepared")
+
             df = get_radiomics_features_from_folder(im_path, seg_path, Path(tmp_param_file.name), *args,
                                                     id_globber=self.id_globber,
                                                     idlist=idlist,
                                                     by_slice=by_slice,
-                                                    writer=writer)
+                                                    writer_func=ExcelWriterProcess.write if stream_output else None)
 
         self._extracted_features = df.T
         if self._extracted_features.index.nlevels > 1:

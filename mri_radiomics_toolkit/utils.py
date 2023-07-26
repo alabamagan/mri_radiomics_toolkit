@@ -7,6 +7,7 @@ import pandas as pd
 from typing import Optional, Union, Any
 from multiprocessing import Queue, Manager, Process
 from pathlib import Path
+from mnts.mnts_logger import MNTSLogger
 
 def compress(in_str):
     r"""Compresses a string using gzip and base64 encodes it.
@@ -94,6 +95,7 @@ class ExcelWriterProcess:
         self.queue = self.manager.Queue()
         self.output_file = output_file
         self.process = Process(target=self._run, args=(self.queue, self.output_file))
+        self.logger = MNTSLogger['ExcelWriterProcess']
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -115,6 +117,7 @@ class ExcelWriterProcess:
             raise ArithmeticError("Write must only be called after a writer instance is created.")
         # if not cls._instance.process.is_alive():
         #     raise RuntimeError("ExcelWriterProcess.write is called but no process is alive. Have you called start()?")
+        cls._instance.logger.debug(f"Got data: {data}")
         instance = cls._instance
         instance.queue.put(data)
 

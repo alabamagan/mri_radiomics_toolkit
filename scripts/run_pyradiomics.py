@@ -12,6 +12,7 @@ from mnts.utils import get_unique_IDs, load_supervised_pair_by_IDs, repeat_zip
 from pprint import *
 
 from mri_radiomics_toolkit.feature_extractor import FeatureExtractor
+from mri_radiomics_toolkit.utils import ExcelWriterProcess
 import multiprocessing as mpi
 import argparse
 
@@ -52,6 +53,8 @@ def main():
                         help='Regex ID globber for pairing images and segmentation.')
     parser.add_argument('-o', '--output', action='store', type=Path,
                         help='Where to output the computed features as excel.')
+    parser.add_argument('-k', '--stream', action='store_true',
+                         help="Stream output to an excel file.")
     parser.add_argument('-v' '--verbose', action='store_true',
                         help='Verbosity option.')
     parser.add_argument('--id-list', action='store', default=None,
@@ -90,6 +93,7 @@ def main():
                     logger_name='pyradiomics', verbose=True, keep_file=args.keep_log) as logger:
         # Take over radiomics logger
         rad_logger = radiomics.logger
+        radiomics.setVerbosity(10) # DEBUG
         take_over_logger(rad_logger)
 
         if str(args.id_list).count(os.sep):
@@ -126,27 +130,53 @@ def main():
         else:
             idlist = [r for r in args.id_list.split(',')]
 
+        # Check if output file already exist
+        outpath = Path(args.output)
+        if outpath.is_file():
+            logger.warning("Found existing rad file. Appending newly calculated features here.")
+            if outpath.suffix == '.xlsx' or outpath.suffix is None:
+                df_existing = pd.read_excel(str(outpath.with_suffix('.xlsx').resolve()), index_col=[0, 1, 2])
+            elif outpath.suffix == '.csv':
+                df_existing = pd.read_csv.to_csv(str(outpath.resolve()), index_col=[0, 1, 2])
+
+            overlapping_ids = (set(df_existing.columns)) - set(idlist)
+            if not len(overlapping_ids) == 0:
+                logger.warning(f"Some of the patients has already been processed: {overlapping_ids}. Removing them"
+                               f"from the existing idlist.")
+                idlist = set(idlist) - set(df_existing.columns)
+
         fe = FeatureExtractor(id_globber=args.id_globber, idlist=idlist)
 
         # Run main code
-        outpath = Path(args.output)
         if not outpath.parent.is_dir():
             outpath.parent.mkdir(exist_ok=False)
         if outpath.is_dir():
             outpath = outpath.join('extracted_features.xlsx')
+        if args.stream:
+            stream_writer = ExcelWriterProcess(output_file=str(outpath.with_suffix(".xlsx").resolve()))
+            stream_writer.start()
 
         if NORM_FLAG:
             df = fe.extract_features_with_norm(img_path, seg_path, param_file=param_file, norm_state_file=norm_file_path)
         else:
-            df = fe.extract_features(img_path, seg_path, param_file=param_file)
+            df = fe.extract_features(img_path, seg_path, param_file=param_file, stream_output=args.stream)
+
+        if args.stream:
+            # Elegantly close writer
+            stream_writer.stop()
+
+            # Change outpath to save a copy in case something went wrong
+            outpath.with_name(outpath.stem + "_bak" + output.suffix)
 
         if outpath.suffix == '.xlsx' or outpath.suffix is None:
             df.to_excel(str(outpath.with_suffix('.xlsx').resolve()))
         elif outpath.suffix == '.csv':
             df.to_csv(str(outpath.resolve()))
         else:
-            raise IOError(f"Inccorect suffix, only '.csv' or '.xlsx' accepted, got {outpath.suffix} instead.")
-
+            # Force saving as xlsx
+            df.to_excel(str(outpath.with_suffix('.xlsx').resolve()))
+            raise RuntimeWarning(f"Inccorect suffix, only '.csv' or '.xlsx' accepted, got {outpath.suffix} instead."
+                                 f"Saving as Excel anyway.")
 
     return df
 
