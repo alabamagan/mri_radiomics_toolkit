@@ -178,9 +178,13 @@ fs.predict(features_a.T)
 
 # DataFrame convention
 
-In this packages, the features data frame are generally configured with rows being each unique feature and columns being the data points (patients). The index typically has three levels `{1: 'Pre-processing', 2: 'FeatureGroup', 3: 'Feature_Name')`. The index is generally `pd.MultiIndex`, but sometimes, its converted to single level index `pd.Index` by maping `'_'.join`.
+In this packages, the features data frame are generally configured with rows being each unique feature and columns being the data points (patients). The index typically has three levels `{1: 'Pre-processing', 2: 'FeatureGroup', 3: 'Feature_Name')`. The index is generally `pd.MultiIndex`, but sometimes, its converted to single level index `pd.Index` by maping `'_'.join` because some of the scipy/sklearn operations dislike MultiIndex.
 
 ## Convention for most internal operations
+
+For most part of the package, the `pd.DataFrame` input should have features as rows and subjects as columns.
+
+### Examples
 
 ```
 +----------------+---------------+----------------------------------+-----------+-----------+-----------+
@@ -259,3 +263,9 @@ Please consider citing this paper if you found this repository helpful for your 
   publisher={MDPI}
 }
 ```
+
+# Data License
+
+Data for python unittest were downloaded as per instruction here: https://torchio.readthedocs.io/datasets.html
+
+See https://nist.mni.mcgill.ca/pediatric-atlases-4-5-18-5y/ for more details.
