@@ -139,12 +139,12 @@ def main():
             elif outpath.suffix == '.csv':
                 df_existing = pd.read_csv.to_csv(str(outpath.resolve()), index_col=[0, 1, 2])
 
-            overlapping_ids = (set(df_existing.columns)) - set(idlist)
+            overlapping_ids = set(df_existing.columns).intersection(set(idlist))
             if not len(overlapping_ids) == 0:
-                logger.warning(f"Some of the patients has already been processed: {overlapping_ids}. Removing them"
+                logger.warning(f"Some of the patients has already been processed. Removing them"
                                f"from the existing idlist.")
-                idlist = set(idlist) - set(df_existing.columns)
-
+                idlist = set(idlist) - overlapping_ids
+                logger.info(f"ID removed: {pformat(','.join(idlist))}")
         fe = FeatureExtractor(id_globber=args.id_globber, idlist=idlist)
 
         # Run main code
