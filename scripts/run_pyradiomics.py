@@ -61,6 +61,8 @@ def main():
                         help='If specificied pass this to feature extractor.')
     parser.add_argument('--keep-log', action='store_true',
                         help='If true, the log file is saved to "pyradiomics.log"')
+    parser.add_argument('--debug', action='store_true',
+                        help="Enable debug mode.")
     args = parser.parse_args()
 
     try:
@@ -144,7 +146,14 @@ def main():
                 logger.warning(f"Some of the patients has already been processed. Removing them"
                                f"from the existing idlist.")
                 idlist = set(idlist) - overlapping_ids
+                idlist = list(idlist)
                 logger.info(f"ID removed: {pformat(','.join(idlist))}")
+
+
+        if args.debug:
+            logger.warning("Entering debug mode.")
+            idlist = idlist[:5]
+
         fe = FeatureExtractor(id_globber=args.id_globber, idlist=idlist)
 
         # Run main code

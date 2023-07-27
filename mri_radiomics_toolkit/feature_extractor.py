@@ -217,6 +217,7 @@ def get_radiomics_features(fn: Path,
         # Update progress
         if isinstance(mpi_progress, tuple):
             lock, progress = mpi_progress
+            # prevent simultaneous access to it the process
             with lock:
                 progress.value += 1
         return out
@@ -311,7 +312,7 @@ def get_radiomics_features_from_folder(im_dir: Path,
         res = pool.starmap_async(func, z)
 
         # Update progress bar
-        while not res.ready() or progress.value < len(source):
+        while not res.ready():
             pbar.n = progress.value
             pbar.refresh()
             time.sleep(0.1)

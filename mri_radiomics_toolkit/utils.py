@@ -95,7 +95,7 @@ class ExcelWriterProcess:
         self.queue = self.manager.Queue()
         self.output_file = output_file
         self.process = Process(target=self._run, args=(self.queue, self.output_file))
-        self.logger = MNTSLogger['ExcelWriterProcess']
+        self.__class__.logger = MNTSLogger['ExcelWriterProcess']
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -136,11 +136,13 @@ class ExcelWriterProcess:
         """
         while True:
             try:
+                logger = ExcelWriterProcess._instance.logger
                 data = queue.get()
                 if data is None:  # Check if it's the signal to stop processing
                     break
                 mode = 'a' if Path(output_file).is_file() else 'w'
 
+                logger.debug(f"Writing data: {data}")
                 # Open the Excel file and append the new series as a new column
                 with pd.ExcelWriter(output_file,
                                     engine='openpyxl',
@@ -156,7 +158,12 @@ class ExcelWriterProcess:
                         index = mode != 'a',  # No need to write index if columns are appended
                         startcol=writer.sheets[default_sheet].max_column if mode == 'a' else 0
                     )
+                logger.debug(f"Done writing data: {data}")
             except BrokenPipeError:
                 continue
             except Exception as e:
-                print(f"An error occurred: {e}")
+                logger = ExcelWriterProcess._instance.logger
+                if not logger is None:
+                    logger.error(f"An error occurred: {e}")
+                else:
+                    print(f"An error occurred: {e}")
