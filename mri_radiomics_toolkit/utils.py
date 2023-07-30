@@ -2,6 +2,7 @@ import gzip
 import base64
 import io
 import os
+import time
 
 import pandas as pd
 from typing import Optional, Union, Any
@@ -117,7 +118,6 @@ class ExcelWriterProcess:
             raise ArithmeticError("Write must only be called after a writer instance is created.")
         # if not cls._instance.process.is_alive():
         #     raise RuntimeError("ExcelWriterProcess.write is called but no process is alive. Have you called start()?")
-        cls._instance.logger.debug(f"Got data: {data}")
         instance = cls._instance
         instance.queue.put(data)
 
@@ -134,31 +134,53 @@ class ExcelWriterProcess:
             queue (multiprocessing.Queue): The queue for receiving pandas Series from the main process.
             output_file (str): The output file where the series will be written to.
         """
+        cache = []
+        last_flush = time.time()
+        LAST_FLUSH_FLAG = False
         while True:
             try:
-                logger = ExcelWriterProcess._instance.logger
+                logger = MNTSLogger['ExcelWriterProcess']
                 data = queue.get()
+                logger.info(f"Got data: {data}")
+                time_passed = time.time() - last_flush
                 if data is None:  # Check if it's the signal to stop processing
-                    break
-                mode = 'a' if Path(output_file).is_file() else 'w'
+                    # Check if there's still something thats not written in cache
+                    if len(cache) > 0:
+                        LAST_FLUSH_FLAG = True # This will trigger the program to flush immediately
+                    else:
+                        break
+                else:
+                    cache.append(data)
 
-                logger.debug(f"Writing data: {data}")
-                # Open the Excel file and append the new series as a new column
-                with pd.ExcelWriter(output_file,
-                                    engine='openpyxl',
-                                    mode=mode,
-                                    if_sheet_exists='overlay' if mode == 'a' else None) as writer:
-                    sheetnames = list(writer.sheets.keys())
-                    default_sheet = sheetnames[0] if len(sheetnames) > 1 else 'Sheet1'
-                    # Convert pd.Series to pd.DataFrame for writing
-                    if isinstance(data, pd.Series):
-                        data = data.to_frame()
-                    data.to_excel(
-                        writer,
-                        index = mode != 'a',  # No need to write index if columns are appended
-                        startcol=writer.sheets[default_sheet].max_column if mode == 'a' else 0
-                    )
-                logger.debug(f"Done writing data: {data}")
+                # For large existing excel file, writing process is slow, cache so it does need to reopen the file
+                # every time a new data come in, but instead, do it every 20 data
+                if len(cache) >= 20 or time_passed > 360 or LAST_FLUSH_FLAG:
+                    if LAST_FLUSH_FLAG:
+                        logger.info("Performing last flush.")
+                    df = pd.concat(cache, axis=1)
+                    last_flush = time.time()
+                    cache.clear()
+
+                    mode = 'a' if Path(output_file).is_file() else 'w'
+
+                    logger.debug(f"Writing data: {df}")
+                    # Open the Excel file and append the new series as a new column
+                    with pd.ExcelWriter(output_file,
+                                        engine='openpyxl',
+                                        mode=mode,
+                                        if_sheet_exists='overlay' if mode == 'a' else None) as writer:
+                        sheetnames = list(writer.sheets.keys())
+                        default_sheet = sheetnames[0] if len(sheetnames) > 1 else 'Sheet1'
+                        # Convert pd.Series to pd.DataFrame for writing
+                        df.to_excel(
+                            writer,
+                            index = mode != 'a',  # No need to write index if columns are appended
+                            startcol=writer.sheets[default_sheet].max_column if mode == 'a' else 0
+                        )
+                    logger.debug(f"Done writing data: {df}")
+
+                if LAST_FLUSH_FLAG:
+                    break
             except BrokenPipeError:
                 continue
             except Exception as e:
