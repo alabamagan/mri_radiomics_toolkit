@@ -146,6 +146,5 @@ class Test_feature_extractor(unittest.TestCase):
                                                    id_globber="MRI_\d+",
                                                    writer_func=ExcelWriterProcess.write)
             writer.stop()
-
             saved_df = pd.read_excel(temp_excelfile, index_col=[0, 1, 2], engine='openpyxl')
             df.equals(saved_df)
