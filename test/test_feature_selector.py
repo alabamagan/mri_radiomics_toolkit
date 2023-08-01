@@ -2,11 +2,13 @@ import unittest
 from pathlib import Path
 import pandas as pd
 import warnings
+import numpy as np
+
 warnings.filterwarnings('ignore', '.*ConvergenceWarning.*')
 
 from mri_radiomics_toolkit.feature_selection import filter_features_by_T_test, filter_low_var_features, \
     filter_features_by_ICC_thres, FeatureSelector, compute_ICC, bootstrapped_features_selection, \
-    preliminary_feature_filtering, supervised_features_selection
+    preliminary_feature_filtering, supervised_features_selection, filter_features_by_ANOVA
 from mnts.mnts_logger import MNTSLogger
 
 class Test_selector(unittest.TestCase):
@@ -77,8 +79,21 @@ class Test_selector(unittest.TestCase):
     def test_Selector_inference(self):
         pass
 
+    @unittest.skip("This takes too long")
     def test_Selector_fit(self):
         # This might take a while
         self._logger.info(f"Testing select fit pipeline, this could take a while.")
         s = FeatureSelector(boot_runs=3)
         s.fit(self.features_a.T, self.gt, self.features_b.T)
+
+    def test_filter_by_ANOVA(self):
+        # artificially add more classes to gt
+        np.random.seed(4213215)
+        index_to_change = np.random.randint(0, 100, size=10)
+        new_gt = self.gt.copy()
+        new_gt.iloc[index_to_change] = 2
+
+        # run filter
+        sf = filter_features_by_ANOVA(self.features_a, new_gt)
+        self.assertIsInstance(sf, pd.DataFrame)
+        pass

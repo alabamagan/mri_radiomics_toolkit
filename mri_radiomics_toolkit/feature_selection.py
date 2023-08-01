@@ -8,6 +8,7 @@ import joblib
 import pandas as pd
 import pingouin as pg
 import sklearn
+import warnings
 from mnts.mnts_logger import MNTSLogger
 from scipy.stats import *
 from sklearn import feature_selection as skfs
@@ -25,8 +26,8 @@ def compute_ICC(featset_A: pd.DataFrame,
                 featset_B: pd.DataFrame,
                 ICC_form: Optional[str] = 'ICC2k') -> pd.DataFrame:
     r"""
-    Compute the ICC of feature calculated from two sets of data. Note that this function does not check the senity of
-    the provided dataframe. The dataframe should look like this:
+    Compute the ICC of feature calculated from two sets of segmentation. Note that this function does not check the
+    senity of the provided dataframe. The dataframe should look like this:
 
     +----------------+---------------+----------------------------------+-----------+-----------+-----------+
     | Pre-processing | Feature_Group |           Feature_Name           | Patient 1 | Patient 2 | Patient 3 |
@@ -156,8 +157,7 @@ def filter_features_by_ICC_thres(featset_A: pd.DataFrame,
                                  featset_B: pd.DataFrame,
                                  ICC_threshold: Optional[float] = 0.9,
                                  ICC_form: Optional[str] = 'ICC2k') -> pd.MultiIndex:
-    r"""
-    Wrapper function for convenience
+    r"""Wrapper function for convenience
     `featset_A/B` columns should be patient identifiers, and rows should be features.
 
     Args:
@@ -177,8 +177,7 @@ def filter_features_by_ICC_thres(featset_A: pd.DataFrame,
 
 def filter_features_by_T_test(features: pd.DataFrame,
                               target: pd.DataFrame) -> pd.DataFrame:
-    r"""
-    Return the p-values of the t-test.
+    r"""Return the p-values of the t-test.
 
     * `features` should follow the same convention as that in `get_feat_list_thres_w_ICC`
     * `target` should be a dataframe with status column labelled as 'Status' with value `0/1` or `True/False` and
@@ -186,7 +185,7 @@ def filter_features_by_T_test(features: pd.DataFrame,
 
     Args:
         features (pd.DataFrame):
-            The features to be tested. Should fallow the format in :func:`get_feat_list_thres_w_ICC`
+            The features to be tested. Should follow the format in :func:`get_feat_list_thres_w_ICC`
         target (pd.DataFrame):
             The status of the patients.
 
@@ -201,6 +200,8 @@ def filter_features_by_T_test(features: pd.DataFrame,
     classes = list(set(T))
     if len(classes) == 1:
         raise ArithmeticError("There is only one class in the data set.")
+    elif len(classes) > 2:
+        raise ArithmeticError("T-test does not support multi-label classification.")
 
     # Get a list of ids for patients with different classes
     patients_lists = {c: target.loc[T == c].index.tolist() for c in classes}
@@ -217,9 +218,11 @@ def filter_features_by_T_test(features: pd.DataFrame,
 
         _is_norm = pval > .05
         if _is_norm:
+            # If distribution is normal
             t_pval = pg.ttest(_f_A, _f_B)['p-val'].astype('float')
             test_name = 'Student t-test'
         else:
+            # Otherwise
             t_pval = pg.mwu(_f_A, _f_B)['p-val'].astype('float')
             test_name = 'Mann-Whitney U'
 
@@ -229,6 +232,119 @@ def filter_features_by_T_test(features: pd.DataFrame,
     T_test_pvals.index = features.index
 
     return T_test_pvals
+
+
+def filter_features_by_ANOVA(features: pd.DataFrame,
+                             target: Union[pd.Series,pd.DataFrame]) -> pd.DataFrame:
+    r"""Performs ANOVA (Analysis of Variance) on the given features and target classes and filters features
+    based on the results.
+
+    This function first checks the assumptions of ANOVA on the input data:
+    - There are more than 2 classes in the target.
+    - The target variable is normally distributed for each group.
+    - The variances of the target variable are equal for each group.
+    Violations of the normality and equal variance assumptions are reported as warnings.
+
+    Then, it performs ANOVA for each feature and returns a DataFrame containing the p-values of the ANOVA tests.
+
+    Args:
+        features (pd.DataFrame):
+            The input features as a pandas DataFrame. Each row represents an observation,
+            and each column represents a feature. The data should be numeric and not contain any missing values.
+
+        target (pd.Series or pd.DataFrame):
+            The target classes as a pandas Series or DataFrame.
+            If it is a DataFrame, it should only have one column. The target should not contain any missing values.
+
+    Returns:
+        pd.DataFrame:
+            A DataFrame with one column named 'pval'. Each row corresponds to a feature in the input
+            DataFrame, and the 'pval' column contains the p-value of the ANOVA test for that feature.
+
+    Raises:
+        ValueError: If the target has less than 3 unique classes.
+
+    Warnings:
+        RuntimeWarning: If the normality assumption is violated for any group in any feature.
+        RuntimeWarning: If the equal variance assumption is violated for any feature.
+
+    Examples:
+    >>># Assume we have the following DataFrame
+    >>>df = pd.DataFrame({
+    >>>    'A': [1, 2, 3, 4, 5, 6],
+    >>>    'B': [7, 8, 9, 10, 11, 12],
+    >>>    'C': [13, 14, 15, 16, 17, 18]
+    >>>})
+    >>>
+    >>># And this target
+    >>>target = pd.Series([1, 2, 1, 2, 1, 2])
+    >>>
+    >>># Perform the feature filtering
+    >>>filtered_features = filter_features_by_ANOVA(df, target)
+    """
+    # Check ANOVA assumptions
+    # Assumption 1: There are more than 2 classes.
+    num_classes = target.nunique(dropna=True)[0]
+    if num_classes < 3:
+        msg = f"Target status has less than 3 classes."
+        raise ValueError(msg)
+
+    # Assumption 2: The target variable should be normally distributed for each group
+    for group in np.unique(target):
+        # filter data that belonged to `group`
+        group_indices = target.loc[(target == group).values].index
+        group_data = features[group_indices]
+
+        # test normality of each feature in each group
+        normality_test = features.apply(shapiro, axis=1)
+        normality_test = normality_test.apply(pd.Series)
+        normality_test.columns = ["Statistics", "pval"]
+
+        # those with a significant p-value are not normally distributed
+        violated_features = normality_test.loc[normality_test['pval'] <= .05].index
+
+        # warn user about this
+        if len(violated_features):
+            warnings.warn(f"Normality assumption violated for group '{group}', features: {violated_features}",
+                                RuntimeWarning)
+
+    # Assumption 3: The variances of the target variable should be equal for each group
+    # group data by their classes first
+    levene_res = []
+    frames = []
+    features.groupby(target[target.columns[0]], axis=1).apply(frames.append)
+
+    # for each feature, do the levene test and put the results into pd.Series
+    for rows in zip(*[f.iterrows() for f in frames]):
+        _feat_name = rows[0][0]
+        _feats = [r[1] for r in rows]
+
+        # If features are normally distributed, use mean as center, otherwise use median
+        _center = 'median' if _feat_name in violated_features else 'mean'
+        _statistics, _pval = levene(*_feats, center=_center)
+        levene_res.append(pd.Series([_statistics, _pval], index=["Statistics", "pval"], name=_feat_name))
+
+    # merge the series into a dataframe
+    levene_res = pd.concat(levene_res, axis=1).T
+    levene_pvals = levene_res['pval']
+
+    # warn about features that violates the equal variance assumption
+    if any(levene_pvals.values <= .05):
+        non_equal_var_features = levene_pvals.loc[levene_pvals <= .05].index
+        warnings.warn(f"Equal variance assumption violated for target '{non_equal_var_features}'",
+                      RuntimeWarning)
+
+    # Performing ANOVA
+    anova_res = []
+    for rows in zip(*[f.iterrows() for f in frames]):
+        _feat_name = rows[0][0]
+        _feats = [r[1] for r in rows]
+        f_statistic, p_value = f_oneway(*_feats)
+        anova_res.append(pd.Series([f_statistic, p_value], index=["F", "pval"], name=_feat_name))
+    anova_res = pd.concat(anova_res, axis=1).T
+    p_values = anova_res['pval']
+    return p_values.to_frame()
+
 
 
 def filter_low_var_features(features: pd.DataFrame) -> Tuple[pd.Index, skfs.VarianceThreshold]:
