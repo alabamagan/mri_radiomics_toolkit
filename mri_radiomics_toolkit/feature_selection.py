@@ -282,6 +282,7 @@ def filter_features_by_ANOVA(features: pd.DataFrame,
     >>># Perform the feature filtering
     >>>filtered_features = filter_features_by_ANOVA(df, target)
     """
+    logger = MNTSLogger['ANOVA']
     # Check ANOVA assumptions
     # Assumption 1: There are more than 2 classes.
     num_classes = target.nunique(dropna=True)[0]
@@ -299,14 +300,14 @@ def filter_features_by_ANOVA(features: pd.DataFrame,
         normality_test = features.apply(shapiro, axis=1)
         normality_test = normality_test.apply(pd.Series)
         normality_test.columns = ["Statistics", "pval"]
+        logger.debug(f"Normality Shapiro results: \n{normality_test.to_string()}")
 
         # those with a significant p-value are not normally distributed
         violated_features = normality_test.loc[normality_test['pval'] <= .05].index
 
         # warn user about this
         if len(violated_features):
-            warnings.warn(f"Normality assumption violated for group '{group}', features: {violated_features}",
-                                RuntimeWarning)
+            logger.warning(f"Normality assumption violated for group '{group}', features: {violated_features}")
 
     # Assumption 3: The variances of the target variable should be equal for each group
     # group data by their classes first
@@ -326,13 +327,13 @@ def filter_features_by_ANOVA(features: pd.DataFrame,
 
     # merge the series into a dataframe
     levene_res = pd.concat(levene_res, axis=1).T
+    logger.debug(f"Leven test results: \n{levene_res.to_string()}")
     levene_pvals = levene_res['pval']
 
     # warn about features that violates the equal variance assumption
     if any(levene_pvals.values <= .05):
         non_equal_var_features = levene_pvals.loc[levene_pvals <= .05].index
-        warnings.warn(f"Equal variance assumption violated for target '{non_equal_var_features}'",
-                      RuntimeWarning)
+        logger.warning(f"Equal variance assumption violated for target '{non_equal_var_features}'")
 
     # Performing ANOVA
     anova_res = []
@@ -342,6 +343,7 @@ def filter_features_by_ANOVA(features: pd.DataFrame,
         f_statistic, p_value = f_oneway(*_feats)
         anova_res.append(pd.Series([f_statistic, p_value], index=["F", "pval"], name=_feat_name))
     anova_res = pd.concat(anova_res, axis=1).T
+    logger.debug(f"ANOVA results: \n{anova_res.to_string()}")
     p_values = anova_res['pval']
     return p_values.to_frame()
 
