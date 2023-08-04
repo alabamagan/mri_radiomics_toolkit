@@ -137,55 +137,60 @@ class ExcelWriterProcess:
         cache = []
         last_flush = time.time()
         LAST_FLUSH_FLAG = False
-        while True:
-            try:
-                logger = MNTSLogger['ExcelWriterProcess']
-                data = queue.get()
-                logger.info(f"Got data: {data}")
-                time_passed = time.time() - last_flush
-                if data is None:  # Check if it's the signal to stop processing
-                    # Check if there's still something thats not written in cache
-                    if len(cache) > 0:
-                        LAST_FLUSH_FLAG = True # This will trigger the program to flush immediately
+
+        # If file already exist, read it to get the index
+        mode = 'a' if Path(output_file).is_file() else 'w'
+        write_index = mode != 'a'
+
+        # Open the file first
+        with pd.ExcelWriter(output_file,
+                            engine='openpyxl',
+                            mode=mode,
+                            if_sheet_exists='overlay' if mode == 'a' else None) as writer:
+            while True:
+                try:
+                    logger = MNTSLogger['ExcelWriterProcess']
+                    data = queue.get()
+                    logger.info(f"Got data: {data}")
+                    time_passed = time.time() - last_flush
+                    if data is None:  # Check if it's the signal to stop processing
+                        # Check if there's still something thats not written in cache
+                        if len(cache) > 0:
+                            LAST_FLUSH_FLAG = True # This will trigger the program to flush immediately
+                        else:
+                            break
                     else:
-                        break
-                else:
-                    cache.append(data)
+                        cache.append(data)
 
-                # For large existing excel file, writing process is slow, cache so it does need to reopen the file
-                # every time a new data come in, but instead, do it every 20 data
-                if len(cache) >= 20 or time_passed > 360 or LAST_FLUSH_FLAG:
-                    if LAST_FLUSH_FLAG:
-                        logger.info("Performing last flush.")
-                    df = pd.concat(cache, axis=1)
-                    last_flush = time.time()
-                    cache.clear()
+                    # Because the excel file could be very large, and it would be slow to write the data everytime
+                    # a data column arrives. Therefore, we flush the cache every 20 rows.
+                    if len(cache) >= 20 or time_passed > 360 or LAST_FLUSH_FLAG:
+                        if LAST_FLUSH_FLAG:
+                            logger.info("Performing last flush.")
+                        df = pd.concat(cache, axis=1)
+                        last_flush = time.time()
+                        cache.clear()
+                        logger.debug(f"Writing data: {df}")
 
-                    mode = 'a' if Path(output_file).is_file() else 'w'
-
-                    logger.debug(f"Writing data: {df}")
-                    # Open the Excel file and append the new series as a new column
-                    with pd.ExcelWriter(output_file,
-                                        engine='openpyxl',
-                                        mode=mode,
-                                        if_sheet_exists='overlay' if mode == 'a' else None) as writer:
+                        # Write data to excel file
                         sheetnames = list(writer.sheets.keys())
                         default_sheet = sheetnames[0] if len(sheetnames) > 1 else 'Sheet1'
+
                         # Convert pd.Series to pd.DataFrame for writing
                         df.to_excel(
                             writer,
-                            index = mode != 'a',  # No need to write index if columns are appended
+                            index = write_index,  # No need to write index if columns are appended
                             startcol=writer.sheets[default_sheet].max_column if mode == 'a' else 0
                         )
-                    logger.debug(f"Done writing data: {df}")
+                        logger.debug(f"Done writing data: {df}")
 
-                if LAST_FLUSH_FLAG:
-                    break
-            except BrokenPipeError:
-                continue
-            except Exception as e:
-                logger = ExcelWriterProcess._instance.logger
-                if not logger is None:
-                    logger.error(f"An error occurred: {e}")
-                else:
-                    print(f"An error occurred: {e}")
+                    if LAST_FLUSH_FLAG:
+                        break
+                except BrokenPipeError:
+                    continue
+                except Exception as e:
+                    logger = ExcelWriterProcess._instance.logger
+                    if not logger is None:
+                        logger.error(f"An error occurred: {e}")
+                    else:
+                        print(f"An error occurred: {e}")
