@@ -352,6 +352,10 @@ def filter_features_by_ANOVA(features: pd.DataFrame,
 def filter_low_var_features(features: pd.DataFrame) -> Tuple[pd.Index, skfs.VarianceThreshold]:
     r"""Filter away features with low variance that are likely to be errors.
 
+    The threshold was determined roughly by aiming to remove features that are constant in x% of
+    the cases. The variance of such distribution is estimated to be x * (1 - x)
+
+
     Args:
         features (pd.DataFrame):
             Input features.
@@ -445,7 +449,12 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
     if len(feats_a.columns.difference(targets.index)) > 0:
         msg = f"Differene between features and target detected: {feats_a.columns.difference(targets.index)}"
         raise KeyError(msg)
-    pvals_feats_a = filter_features_by_T_test(feats_a, targets)
+    # If binary targets, use T-test, otherwise, use ANOVA
+    if len(np.unique(targets)) <= 2:
+        pvals_feats_a = filter_features_by_T_test(feats_a, targets)
+    else:
+        pvals_feats_a = filter_features_by_ANOVA(feats_a, targets)
+
     feats_a = feats_a.loc[(pvals_feats_a['pval'] < p_thres).index]
     if not features_b is None:
         pvals_feats_b = filter_features_by_T_test(feats_b, targets)
