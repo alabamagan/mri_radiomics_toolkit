@@ -16,9 +16,15 @@ class Test_feature_extractor(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.cls_logger = MNTSLogger(".", "Test_FE", verbose=True, keep_file=False, log_level='debug')
+        cls.cls_logger = MNTSLogger(".", "Test_FE", verbose=True, keep_file=False, log_level='info')
         # hijack radiomics logger
-        radiomics.setVerbosity(20) # INFO
+        radiomics.setVerbosity(10) # INFO
+
+        # removing its handlers to suppress wild messages
+        ori_rad_logger = radiomics.logger
+        h = ori_rad_logger.handlers
+        for hh in h:
+            ori_rad_logger.removeHandler(hh)
         radiomics.logger = MNTSLogger['radiomics']
 
     @classmethod
