@@ -298,24 +298,28 @@ def get_radiomics_features_from_folder(im_dir: Path,
         z = repeat_zip(source, mask[0], [param_file])
     else:
         z = repeat_zip(source, mask[0], [param_file], *mask[1:])
-
     with mpi.Manager() as manager:
         # configure the progress bar
         progress = manager.Value('i', 0)
-        pbar = tqdm(total=len(source), desc="Feature extraction")
+        pbar = tqdm(total=len(source), desc=f"Feature extraction", leave=True)
 
         # create the worker pool
         pool = mpi.Pool(mpi.cpu_count()) # pyradiomics also runs in multi-thread
         func = partial(get_radiomics_features,
                        id_globber=id_globber,
                        mpi_progress=(manager.Lock(), progress), **kwargs)
-        res = pool.starmap_async(func, z)
 
+        res = pool.starmap_async(func, z)
         # Update progress bar
         while not res.ready():
             pbar.n = progress.value
-            pbar.refresh()
+            pbar.refresh(nolock=False)
             time.sleep(0.1)
+
+        # let the pbar finish last refresh
+        time.sleep(0.1)
+        pbar.n = progress.value
+        pbar.refresh(nolock=False)
 
         # close the pool
         pool.close()
