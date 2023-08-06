@@ -95,7 +95,7 @@ def main():
                     logger_name='pyradiomics', verbose=True, keep_file=args.keep_log) as logger:
         # Take over radiomics logger
         rad_logger = radiomics.logger
-        radiomics.setVerbosity(10) # DEBUG
+        radiomics.setVerbosity(10 if args.debug else 40) # DEBUG
         take_over_logger(rad_logger)
 
         if str(args.id_list).count(os.sep):
@@ -141,6 +141,7 @@ def main():
             elif outpath.suffix == '.csv':
                 df_existing = pd.read_csv.to_csv(str(outpath.resolve()), index_col=[0, 1, 2])
 
+            # find if there's any ID that has already been calculated. Skip them.
             overlapping_ids = set(df_existing.columns).intersection(set(idlist))
             if not len(overlapping_ids) == 0:
                 logger.warning(f"Some of the patients has already been processed. Removing them"
@@ -175,7 +176,7 @@ def main():
             stream_writer.stop()
 
             # Change outpath to save a copy in case something went wrong
-            outpath.with_name(outpath.stem + "_bak" + output.suffix)
+            outpath.with_name(outpath.stem + "_bak" + outpath.suffix)
 
         if outpath.suffix == '.xlsx' or outpath.suffix is None:
             df.to_excel(str(outpath.with_suffix('.xlsx').resolve()))
