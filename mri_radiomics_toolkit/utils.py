@@ -9,6 +9,7 @@ from typing import Optional, Union, Any
 from multiprocessing import Queue, Manager, Process
 from pathlib import Path
 from mnts.mnts_logger import MNTSLogger
+from functools import partial
 
 def compress(in_str):
     r"""Compresses a string using gzip and base64 encodes it.
@@ -139,14 +140,24 @@ class ExcelWriterProcess:
         LAST_FLUSH_FLAG = False
 
         # If file already exist, read it to get the index
-        mode = 'a' if Path(output_file).is_file() else 'w'
+        output_file = Path(output_file)
+        mode = 'a' if output_file.is_file() else 'w'
         write_index = mode != 'a'
 
+        # Determine which writer to use
+        if output_file.suffix == '.xlsx':
+            writer_class = pd.ExcelWriter
+            kwargs = {
+                'engine': 'openpyxl',
+                'mode': mode,
+                'if_sheet_exists': 'overlay' if mode == 'a' else None
+            }
+        elif output.suffix == '.hdf':
+            raise NotImplementedError
+
+
         # Open the file first
-        with pd.ExcelWriter(output_file,
-                            engine='openpyxl',
-                            mode=mode,
-                            if_sheet_exists='overlay' if mode == 'a' else None) as writer:
+        with writer_class(output_file, **kwargs) as writer:
             while True:
                 try:
                     logger = MNTSLogger['ExcelWriterProcess']
