@@ -176,7 +176,7 @@ def main():
             stream_writer.stop()
 
             # Change outpath to save a copy in case something went wrong
-            outpath.with_name(outpath.stem + "_bak" + outpath.suffix)
+            outpath = outpath.with_name(outpath.stem + "_bak" + outpath.suffix)
 
         if outpath.suffix == '.xlsx' or outpath.suffix is None:
             df.to_excel(str(outpath.with_suffix('.xlsx').resolve()))
