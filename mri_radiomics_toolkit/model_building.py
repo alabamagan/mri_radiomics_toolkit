@@ -6,8 +6,9 @@ import pandas as pd
 from mnts.mnts_logger import MNTSLogger
 from sklearn import *
 from sklearn.model_selection import *
+from .models.cards import default_cv_grid_search_card
 
-__all__ = ['cv_grid_search', 'model_building_', 'ModelBuilder']
+__all__ = ['cv_grid_search', 'ModelBuilder']
 
 
 def cv_grid_search(train_features: pd.DataFrame,
@@ -62,44 +63,7 @@ def cv_grid_search(train_features: pd.DataFrame,
         raise DeprecationWarning(f"This option is deprecated.")
 
     # Construct tests to perform
-    param_grid_dict = {
-        'Support Vector Regression': {
-            'classification': [svm.SVR(tol=1E-4, max_iter=-1)],
-            'classification__kernel': ['linear', 'poly', 'rbf'],
-            'classification__C': [1, 100, 1000],
-            'classification__degree': [3, 5, 7],
-            'classification__epsilon': [1, 0.1, 0.01]
-        },
-        'Elastic Net': {
-            'classification': [linear_model.ElasticNet(tol=1E-4, max_iter=5500)],
-            'classification__alpha': [.02, .002],
-            'classification__l1_ratio': [0.2, 0.5, 0.8]
-        },
-        'Logistic Regression': {
-            'classification': [linear_model.LogisticRegression(penalty='elasticnet',
-                                                               solver='saga', tol=1E-5,
-                                                               max_iter=5500,
-                                                               verbose=verbose)],
-            'classification__C': [0.1, 1, 10, 100, 1000],
-            'classification__l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9]
-        },
-        'Random Forest': {
-            'classification': [ensemble.RandomForestRegressor(n_estimators=50)],
-            'classification__criterion': ['squared_error', 'poisson']
-        },
-        'Perceptron': {
-            'classification': [neural_network.MLPRegressor(learning_rate='adaptive',
-                                                           tol=1E-4,
-                                                           max_iter=5000,
-                                                           verbose=verbose)],
-            'classification__hidden_layer_sizes': [(100), (20, 50, 100), (100, 50, 20)],
-            'classification__learning_rate_init': [1, 0.1, 1E-2, 1E-3, 1E-4]
-        },
-        'KNN': {
-            'classification': [neighbors.KNeighborsRegressor(n_jobs=5)],
-            'classification__n_neighbors': [3, 5, 10, 20],
-        }
-    }
+    param_grid_dict = default_cv_grid_search_card
 
     if not classifiers is None:
         if not isinstance(classifiers, (list, tuple, str)):
@@ -370,9 +334,29 @@ class ModelBuilder(object):
         else:
             return True
 
-    def match_dimension(self, X: pd.DataFrame, y: pd.DataFrame) -> Tuple[pd.DataFrame]:
-        r"""
-        Match the rows of X and y
+    def match_dimension(self,
+                        X: pd.DataFrame,
+                        y: pd.DataFrame,
+                        raise_error: Optional[bool] = True) -> Tuple[pd.DataFrame, pd.DAtaFrame]:
+        r"""Match the rows of X and y.
+
+        Args:
+            X (pd.DataFrame):
+                Features. Rows should be data points and columns should be features.
+            y (pd.DataFrame):
+                Train targets. Each row should be a data point.
+            raise_error (bool, optional):
+                Raise error if rows do not match
+
+        Returns:
+            Tuple[pd.DataFrame, pd.DataFrame]:
+                X and y with matched indece
+
+        Raises:
+            IndexError:
+                If `raise_error` is True, an error is raised when the input feature indices do not match
+                the target indices.
+
         """
         overlap = X.index.intersection(y.index)
         missing_feat = X.index.difference(overlap)
@@ -380,8 +364,15 @@ class ModelBuilder(object):
 
         if len(missing_feat) > 0:
             msg = ','.join([str(r) for r in missing_feat])
-            self._logger.info(f"Rows removed from features: {msg}")
+            if raise_error:
+                raise IndexError(f"Rows removed from features: {msg}")
+            else:
+                self._logger.info(f"Rows removed from features: {msg}")
         if len(missing_targ) > 0:
             msg = ','.join([str (r) for r in missing_targ])
-            self._logger.info(f"Rows removed from targets: {msg}")
+            if raise_error:
+                raise IndexError(f"Rows removed from targets: {msg}")
+            else:
+                self._logger.info(f"Rows removed from targets: {msg}")
+
         return X.loc[overlap], y.loc[overlap]
