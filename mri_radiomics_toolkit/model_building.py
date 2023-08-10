@@ -262,6 +262,7 @@ class ModelBuilder(object):
         """
         # if there are differences in the saved state and the requested classifiers
         if kwargs.get("classifiers", None) is not None and self.saved_state['estimators'] is not None:
+            # run cv fit again if the classifier is not in the saved state
             if isinstance(kwargs['classifiers'], str):
                 if kwargs["classifiers"] not in self.saved_state['estimators']:
                     self._logger.warning(f"Requested classifier is not in saved state, running cv_fit again.")
@@ -337,7 +338,7 @@ class ModelBuilder(object):
     def match_dimension(self,
                         X: pd.DataFrame,
                         y: pd.DataFrame,
-                        raise_error: Optional[bool] = True) -> Tuple[pd.DataFrame, pd.DAtaFrame]:
+                        raise_error: Optional[bool] = True) -> Tuple[pd.DataFrame, pd.DataFrame]:
         r"""Match the rows of X and y.
 
         Args:
