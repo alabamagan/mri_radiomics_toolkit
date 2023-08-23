@@ -283,6 +283,7 @@ def filter_features_by_ANOVA(features: pd.DataFrame,
     >>>filtered_features = filter_features_by_ANOVA(df, target)
     """
     logger = MNTSLogger['ANOVA']
+
     # Check ANOVA assumptions
     # Assumption 1: There are more than 2 classes.
     num_classes = target.nunique(dropna=True)[0]
@@ -375,7 +376,8 @@ def filter_low_var_features(features: pd.DataFrame) -> Tuple[pd.Index, skfs.Vari
 def preliminary_feature_filtering(features_a: pd.DataFrame,
                                   features_b: pd.DataFrame,
                                   targets: pd.DataFrame,
-                                  ICC_form: Optional[str] = 'ICC2k'
+                                  ICC_form: Optional[str] = 'ICC2k',
+                                  p_thres: Optional[float] = .001,
                                   ) -> Tuple[pd.DataFrame, Union[pd.DataFrame, None]]:
     r"""Preliminary feature selection by statistical methods.
 
@@ -394,7 +396,11 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
         targets (pd.DataFrame):
             Ground-truth class with 'Status' column and patient rows.
             If target patients and features patients indices are not the same, an error will be raised.
-        ICC_form (str, optional): The form of Intraclass Correlation Coefficient (ICC) to use. Defaults to 'ICC2k'.
+        ICC_form (str, optional):
+            The form of Intraclass Correlation Coefficient (ICC) to use. Defaults to 'ICC2k'.
+        p_thres (float, optional):
+            The p-value threshold for feature selection. This p-value is calculated from either T-test or ANOVA,
+            depending on the number of classes in the target.
 
     Returns:
         tuple: Tuple of filtered features_a and features_b DataFrames. The rows are features and the columns are cases.
@@ -419,6 +425,7 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
     # Drop features with extremely low variance (i.e., most are same value)
     logger.info("Dropping features with low variance...")
     var_feats_a_index, var_filter = filter_low_var_features(features_a)
+    logger.info(f"Dropped {len(features_a.index) - len(var_feats_a_index)} features.")
 
     # if features_b is provided perform ICC filter
     if features_b is not None:
@@ -444,18 +451,20 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
 
 
     # Filter out features with not enough t-test significance
-    p_thres = .001
-    logger.info(f"Dropping features using T-test with p-value: {p_thres}")
+    logger.info(f"Dropping features using T-test or ANOVA with p-value: {p_thres}")
     if len(feats_a.columns.difference(targets.index)) > 0:
         msg = f"Differene between features and target detected: {feats_a.columns.difference(targets.index)}"
         raise KeyError(msg)
     # If binary targets, use T-test, otherwise, use ANOVA
     if len(np.unique(targets)) <= 2:
+        logger.info("Using T-test")
         pvals_feats_a = filter_features_by_T_test(feats_a, targets)
     else:
+        logger.info("Using ANOVA")
         pvals_feats_a = filter_features_by_ANOVA(feats_a, targets)
 
-    feats_a = feats_a.loc[(pvals_feats_a['pval'] < p_thres).index]
+    logger.info(f"Number of features dropped by ANOVA: {len(feats_a.index) - (pvals_feats_a['pval'] < p_thres).sum()}")
+    feats_a = feats_a.loc[(pvals_feats_a['pval'] < p_thres)]
     if not features_b is None:
         pvals_feats_b = filter_features_by_T_test(feats_b, targets)
         feats_b = feats_a.loc[(pvals_feats_b['pval'] < p_thres).index]
@@ -660,6 +669,7 @@ def features_selection(features_a: pd.DataFrame,
         feats_b = features_normalization(feats_b)
 
     # Supervised feature selection using RENT
+    # TODO: alphas and l1_ratios should be arguments
     alpha = 0.02
     l1_ratio = 0.5
     feats_a_out = supervised_features_selection(feats_a, targets,
