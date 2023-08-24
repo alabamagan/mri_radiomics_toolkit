@@ -11,12 +11,41 @@ from .models.cards import default_cv_grid_search_card
 __all__ = ['cv_grid_search', 'ModelBuilder']
 
 
+def neg_log_loss(estimator: Any,
+                 X: Union[pd.DataFrame, np.ndarray],
+                 y: Union[pd.Series, np.ndarray]):
+    r"""Use this scoring function for multi-class classification problem for GridSearchCV.
+
+    Because the default `sklearn` implementation uses `predict_proba` for GridSearchCV scoring functions,
+    this method provides an escape for regressors. Note that the function :func:`sklearn.metrics.log_loss` gives
+    the negative log likelihood that should be minimized. An addition negative sign is needed to turn this to
+    maximization problem.
+
+    Args:
+        estimator (object):
+            The estimator object used for prediction.
+        X (pd.DataFrame or np.ndarray):
+            The input features for prediction.
+        y (pd.Series or np.ndarray):
+            The target class for prediction. Should have a shape of (1, -1) and of type integer.
+
+    Returns:
+        float: The score value calculated based on the estimator's predictions.
+    """
+    try:
+        pred = estimator.predict_proba(X)
+    except AttributeError:
+        pred = estimator.predict(X)
+    return -sklearn.metrics.log_loss(y, pred, labels=np.unique(y))
+
+
 def cv_grid_search(train_features: pd.DataFrame,
                    train_targets: pd.DataFrame,
                    test_features: Optional[pd.DataFrame] = None,
                    test_targets: Optional[pd.DataFrame] = None,
                    verbose: Optional[bool] = False,
-                   classifiers: Optional[str] = None) -> List[Union[pd.DataFrame, pd.Series]]:
+                   classifiers: Optional[str] = None,
+                   **kwargs) -> List[Union[pd.DataFrame, pd.Series]]:
     r"""
     Grid search for best hyper-parameters for the following linear models:
       * SVM
@@ -41,6 +70,8 @@ def cv_grid_search(train_features: pd.DataFrame,
             This can be one of the keys of `param_grid_dict`: ['Support Vector Regression'|'Elastic Net'|'Logistic
             Regression'|'Random Forest'|'Perceptron'|'KNN']. If specified, only that method will be trained. Default
             to None
+        **kwargs (dict):
+            Keyword arguments for GridSearchCV.
 
     Returns:
         best_params (dict):
@@ -54,6 +85,7 @@ def cv_grid_search(train_features: pd.DataFrame,
 
     """
     logger = MNTSLogger['model-building']
+
     clf = pipeline.Pipeline([
         ('standardization', preprocessing.StandardScaler()),
         ('classification', 'passthrough')
@@ -63,7 +95,7 @@ def cv_grid_search(train_features: pd.DataFrame,
         raise DeprecationWarning(f"This option is deprecated.")
 
     # Construct tests to perform
-    param_grid_dict = default_cv_grid_search_card
+    param_grid_dict = kwargs.pop('param_grid_dict', default_cv_grid_search_card)
 
     if not classifiers is None:
         if not isinstance(classifiers, (list, tuple, str)):
@@ -77,6 +109,19 @@ def cv_grid_search(train_features: pd.DataFrame,
         if len(param_grid_dict) == 0:
             raise ArithmeticError("No classifiers were selected for model building.")
 
+    # Pop kwargs for GridSearchCV
+    scoring = kwargs.pop('scoring', 'roc_auc')
+    n_jobs = kwargs.pop('n_jobs', 10)
+
+    # # handle for multiclass targets
+    # if train_targets.nunique() > 2:
+    #     logger.info("Multiclass targets detected. Using one-vs-rest scheme if `scoring` is not specified.")
+    #     scoring = 'roc_auc_ovr' if scoring == 'roc_auc' else scoring
+    #
+    #     available_scorings = (
+    #         'roc_auc_ovr', 'roc_auc_ovo', 'roc_auc_ovr_weighted', 'roc_auc_ovo_weighted'
+    #     )
+
     best_params = {}
     best_estimators = {}
     results = {}
@@ -85,8 +130,8 @@ def cv_grid_search(train_features: pd.DataFrame,
     for key, param_grid in param_grid_dict.items():
         logger.info("{:-^100}".format(f"Fitting for {key}"))
         split = splitter.split(train_targets, train_targets.values.ravel())
-        grid = GridSearchCV(clf, n_jobs=10, param_grid=param_grid, scoring='roc_auc',
-                            cv=split, verbose=MNTSLogger.is_verbose
+        grid = GridSearchCV(clf, n_jobs=n_jobs, param_grid=param_grid, scoring=scoring,
+                            cv=split, verbose=MNTSLogger.is_verbose, **kwargs
                             )
         grid.fit(train_features.values, train_targets.values.ravel())
 
@@ -94,16 +139,17 @@ def cv_grid_search(train_features: pd.DataFrame,
         best_estimators[f"{key}"] = grid.best_estimator_
         best_params[key] = grid.best_params_
 
+        # Get training scores for the best estimator
+        train_score = grid.score(train_features.values,
+                                 y = train_targets.values)
+        results[f'{key} (train)'] = train_score
+
         # If testing set exist, evalute performance on the testing set
         if not (test_features is None or test_targets is None):
             y = grid.predict(test_features.values)
-            train_y = grid.predict(train_features.values)
-            train_score = metrics.roc_auc_score(train_targets.values.ravel(),
-                                                train_y)
             test_score = metrics.roc_auc_score(test_targets.values.ravel(),
                                                y)
             results[f'{key}'] = test_score
-            results[f'{key} (train)'] = train_score
             predict_table.append(pd.Series(y, index=test_targets.index, name=f"{key}"))
         logger.info("{:-^100}".format(f"Done for {key}"))
 
