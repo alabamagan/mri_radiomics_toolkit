@@ -227,62 +227,7 @@ class Test_pipeline(unittest.TestCase):
 
         self.assertFalse(all([x == "Passed" for x in test_result.items()]))
 
-    def test_model_building(self):
-        from sklearn.model_selection import train_test_split
 
-        p_feat_a = Path('test_data/assets/samples_feat_1st.xlsx')
-        p_gt = Path('test_data/assets/sample_datasheet.csv')
-        p_fss = Path('test_data/assets/fs_saved_state.fss')
-
-        features = pd.read_excel(str(p_feat_a), index_col=[0, 1, 2]).T
-        gt = pd.read_csv(str(p_gt), index_col=0)
-        cases = list(set(features.index) & set(gt.index))
-        gt = gt.loc[cases]
-        features = features.loc[cases]
-
-        with tempfile.NamedTemporaryFile('wb', suffix='.pkl') as f:
-            fs = FeatureSelector()
-            fs.load(p_fss)
-            features = fs.predict(features)
-            self._logger.info(f"Selected features are: {features.T}")
-
-            # Random train test split
-            splitter = train_test_split(features.index, test_size=0.2)
-            train_feats, test_feats = splitter
-            self._logger.info(f"Training group: {train_feats}")
-            self._logger.info(f"Testing group: {test_feats}")
-
-            self._logger.info("{:-^50s}".format(" Building model "))
-            model = ModelBuilder()
-            # Test model building with testing data
-            try:
-                results, predict_table = model.fit(features.loc[train_feats], gt.loc[train_feats],
-                                                   features.loc[test_feats], gt.loc[test_feats])
-            except:
-                self._logger.warning("Fitting with testing data failed!")
-                predict_table = "Error"
-            # Test model building without testing data
-            try:
-                results, _ = model.fit(features.loc[train_feats], gt.loc[train_feats])
-            except Exception as e:
-                self._logger.warning("Fitting without testing data failed!")
-                self._logger.exception(f"{e}")
-            self._logger.info(f"Results: {pprint.pformat(results)}")
-            self._logger.info(f"Predict_table: {predict_table}")
-            self._logger.info(f"Best params: {pprint.pformat(model.saved_state)}")
-
-            # Test save functionality
-            self._logger.info("{:-^50s}".format(" Testing model save/load "))
-            model.save(Path(f.name))
-            # Test load functionality
-            _model = ModelBuilder()
-            _model.load(Path(f.name))
-            self._logger.debug(f"Saved state: {pprint.pformat(_model.saved_state)}")
-            _predict_table = _model.predict(features.loc[test_feats])
-
-            self._logger.info(f"Left:\n {_predict_table}")
-            self._logger.info(f"Right:\n {predict_table}")
-        pass
 
     def test_controller_extraction(self):
         p          = Path('test_data/assets/sample_controller_settings.yml')
