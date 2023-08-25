@@ -3,13 +3,43 @@ import base64
 import io
 import os
 import time
-
+import numpy as np
 import pandas as pd
-from typing import Optional, Union, Any
+from typing import Optional, Union, Any, Iterable
 from multiprocessing import Queue, Manager, Process
 from pathlib import Path
+
+import sklearn.linear_model
 from mnts.mnts_logger import MNTSLogger
 from functools import partial
+from sklearn.utils.class_weight import compute_class_weight
+
+def calculate_class_weights(y: Union[np.ndarray, Iterable]) -> np.ndarray:
+    r"""Compute the class weights
+    
+    Class weights are computed based on the reciprocal of the number of samples per class.
+    
+    .. math::
+        W(c) = \lambda \frac{1}{N_c}
+        
+    where :math:`\lambda` is the global regularizer such that the weight of the class with the
+    most member is normalized to 1. 
+           
+    Returns:
+        (np.ndarray) - The class weights with shape equals to y.shape
+    """ # noqa
+    # Get the unique classes
+    classes = np.unique(y)
+    # Calculate the class weights
+    weights = compute_class_weight('balanced', classes=classes, y=y)
+    # normalize weights
+    weights = weights / weights.min()
+    # create the class weight dictionary
+    class_weight_dict = dict(zip(classes, weights))
+    # construct the weight vector
+    weight_vector = np.array([class_weight_dict[i] for i in y])
+    return weight_vector
+
 
 def compress(in_str):
     r"""Compresses a string using gzip and base64 encodes it.

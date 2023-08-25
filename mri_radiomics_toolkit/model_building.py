@@ -1,14 +1,15 @@
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Any
 
 import joblib
 import pandas as pd
+import numpy as np
 from mnts.mnts_logger import MNTSLogger
 from sklearn import *
 from sklearn.model_selection import *
 from .models.cards import default_cv_grid_search_card
 
-__all__ = ['cv_grid_search', 'ModelBuilder']
+__all__ = ['cv_grid_search', 'ModelBuilder', 'neg_log_loss']
 
 
 def neg_log_loss(estimator: Any,
@@ -36,7 +37,7 @@ def neg_log_loss(estimator: Any,
         pred = estimator.predict_proba(X)
     except AttributeError:
         pred = estimator.predict(X)
-    return -sklearn.metrics.log_loss(y, pred, labels=np.unique(y))
+    return -metrics.log_loss(y, pred, labels=np.unique(y))
 
 
 def cv_grid_search(train_features: pd.DataFrame,
@@ -45,7 +46,7 @@ def cv_grid_search(train_features: pd.DataFrame,
                    test_targets: Optional[pd.DataFrame] = None,
                    verbose: Optional[bool] = False,
                    classifiers: Optional[str] = None,
-                   **kwargs) -> List[Union[pd.DataFrame, pd.Series]]:
+                   **kwargs) -> Tuple[dict, pd.DataFrame, pd.DataFrame, Any]:
     r"""
     Grid search for best hyper-parameters for the following linear models:
       * SVM

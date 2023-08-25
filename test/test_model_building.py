@@ -114,23 +114,16 @@ class Test_ModelBuilding(unittest.TestCase):
 
     def test_cv_grid_search_multi_class(self):
         from mri_radiomics_toolkit.models.cards import multi_class_cv_grid_search_card
+        from mri_radiomics_toolkit.model_building import neg_log_loss
         from functools import partial
         # Setup the configurations
         features = pd.DataFrame(np.random.random(size=(40, 100)))
         gt = pd.Series(np.random.randint(low=0, high=3, size=40))
 
-        # scoring function
-        def scoring(estimator, X, y):
-            try:
-                pred = estimator.predict_proba(X)
-            except AttributeError:
-                pred = estimator.predict(X)
-            return -sklearn.metrics.log_loss(y, pred, labels=np.unique(y))
-
         # Call the function
         best_params, results, predict_table, best_estimators = (
             cv_grid_search(features, gt, None, None,
-                           param_grid_dict=multi_class_cv_grid_search_card, scoring=scoring))
+                           param_grid_dict=multi_class_cv_grid_search_card, scoring=neg_log_loss))
 
 
 if __name__ == '__main__':
