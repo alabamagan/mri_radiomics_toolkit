@@ -16,7 +16,8 @@ from typing import Any, Iterable, Optional
 import math
 import numpy as np
 from scipy.stats import norm
-
+from sklearn import metrics
+import warnings
 
 def getStability(Z: np.ndarray) -> float:
     r''' 
@@ -264,3 +265,58 @@ def jaccard_mean(Z: np.ndarray):
     jac_bar = np.mean(jac)
     jac_bar_sd = np.std(jac)
     return jac, jac_bar, jac_bar_sd
+
+
+def top_k_accuracy_score_(y_true, y_score, **kwargs):
+    r"""This implementation escapes for scenarios where y_score prediction is a vector that does not 
+    consist of all the labels in y_true.
+    
+    Args:
+        y_true (np.ndarray):
+            If input dimension doesn't match unique classes in `y_score`
+        y_score (np.ndarray):
+            Score for prediction. If multi-class, dimension should be (n_class, n_sample)
+        **kwargs:
+            Passed to :func:`sklearn.metrics.top_k_accuracy_score`
+    
+    .. notes::
+        See :func:`sklearn.metrics.top_k_accuracy_score` for more parameter explainations.
+    """ # noqa
+    # obtain the unique label
+    unique_labels = kwargs.pop('labels', np.unique(y_true))
+    k = kwargs.pop('k', 2)
+
+    # convert input to array
+    if not isinstance(y_true, np.ndarray):
+        y_true = np.array(y_true)
+    if not isinstance(y_score, np.ndarray):
+        y_score = np.array(y_score)
+
+    # If score is integer, convert it into one-hot probabilities of 100%
+    if np.issubdtype(y_score.dtype, np.integer):
+        # Warn if k > 1 because accuracy for second guess is also 0
+        if k > 1:
+            warnings.warn("Setting k > 1 but provided integer y_score. Results could be invalid")
+        y_score = pd.get_dummies(y_score)
+    else:
+        y_score = pd.DataFrame(y_score)
+    score_class = y_score.columns
+
+    # check if y_score and y_true has the same unique values
+    y_true_set = set(unique_labels)
+    if not y_score.shape[1] == len(y_true_set):
+        try:
+            # If there are labels to reference the missing class
+            missing_class = y_true_set - set(score_class)
+            for m in missing_class:
+                y_score[m] = 0
+        except TypeError:
+            # otherwise, assume the input is ordered and assign them ordered labels
+            for i in range(len(y_true_set) - len(score_class)):
+                y_score[i + y_score.shape[1]] = 0
+    # order the matrix to be same as the labels
+    y_score = y_score[unique_labels]
+
+    # convert score to float for calculation
+    y_score = y_score.astype(float)
+    return metrics.top_k_accuracy_score(y_true, y_score, labels=unique_labels, k=k, **kwargs)
