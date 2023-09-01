@@ -8,7 +8,8 @@ warnings.filterwarnings('ignore', '.*ConvergenceWarning.*')
 
 from mri_radiomics_toolkit.feature_selection import filter_features_by_T_test, filter_low_var_features, \
     filter_features_by_ICC_thres, FeatureSelector, compute_ICC, bootstrapped_features_selection, \
-    preliminary_feature_filtering, supervised_features_selection, filter_features_by_ANOVA
+    preliminary_feature_filtering, supervised_features_selection, filter_features_by_ANOVA, features_normalization, \
+    features_selection
 from mnts.mnts_logger import MNTSLogger
 
 class Test_selector(unittest.TestCase):
@@ -60,6 +61,9 @@ class Test_selector(unittest.TestCase):
         idx, _ = filter_low_var_features(self.features_a)
         self.assertIsInstance(idx, pd.MultiIndex)
 
+        idx, _ = filter_low_var_features(self.features_b)
+        self.assertIsInstance(idx, pd.MultiIndex)
+
     def test_preliminary_filter_pipeline(self):
         fa, fb = preliminary_feature_filtering(self.features_a, self.features_b, self.gt)
         self.assertIsInstance(fa, pd.DataFrame)
@@ -97,3 +101,14 @@ class Test_selector(unittest.TestCase):
         sf = filter_features_by_ANOVA(self.features_a, new_gt)
         self.assertIsInstance(sf, pd.DataFrame)
         pass
+
+    def test_feature_selection(self):
+        np.random.seed(4213215)
+        # Run feature selection
+        sf = features_selection(self.features_a, self.gt, features_b=self.features_b, n_trials=5,
+                                criteria_threshold=(0.9, 0.1, 0))
+
+    def test_preliminary_feature_filtering(self):
+        np.random.seed(4213215)
+        # Run feature selection
+        sf = preliminary_feature_filtering(self.features_a, self.features_b, self.gt)

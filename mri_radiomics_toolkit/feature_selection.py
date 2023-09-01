@@ -19,7 +19,8 @@ from tqdm.auto import *
 
 from RENT import RENT
 
-__all__ = ['FeatureSelector', 'supervised_features_selection', 'preliminary_feature_filtering']
+__all__ = ['FeatureSelector', 'supervised_features_selection', 'preliminary_feature_filtering', 'features_selection',
+           'features_normalization']
 
 
 def compute_ICC(featset_A: pd.DataFrame,
@@ -80,7 +81,8 @@ def compute_ICC(featset_A: pd.DataFrame,
         pd.DataFrame
     """
     assert featset_A.index.nlevels == featset_B.index.nlevels == 3, \
-        "The dataframe should be arranged with multi-index: ['Pre-processing', 'Feature_Group', 'Feature_Name']"
+        ("The dataframe should be arranged with multi-index: ['Pre-processing', 'Feature_Group', 'Feature_Name']. Got"
+         f" {featset_A.index.nlevels} and {featset_B.index.nlevels}")
     logger = MNTSLogger['ICC']
 
     featset_A['Segmentation'] = "A"
@@ -425,13 +427,12 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
     # Drop features with extremely low variance (i.e., most are same value)
     logger.info("Dropping features with low variance...")
     var_feats_a_index, var_filter = filter_low_var_features(features_a)
-    logger.info(f"Dropped {len(features_a.index) - len(var_feats_a_index)} features.")
+    logger.info(f"Dropped {len(features_a.index) - len(var_feats_a_index)} features for first feature set.")
 
     # if features_b is provided perform ICC filter
     if features_b is not None:
         # Also drop the low zero vairance features for set b
-        var_feats_b = var_filter.fit_transform(features_b.T)
-        var_feats_b_index = features_b.index[var_filter.get_support()]
+        var_feats_b_index, _ = filter_low_var_features(features_b)
         # Only those that fulfilled the variance threshold in both set of features are to be included
         mutual_features = list(set(var_feats_a_index) & set(var_feats_b_index))
         logger.info(f"{len(mutual_features)} features kept: \n{mutual_features}")
@@ -446,6 +447,7 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
         feats_a = features_a.loc[_icc90_feats]
         feats_b = features_b.loc[_icc90_feats]
     else:
+        self.logger.info("Second feature set not found. ICC filtering skipped. ")
         feats_a = features_a.loc[var_feats_a_index]
         feats_b = None
 
@@ -463,11 +465,15 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
         logger.info("Using ANOVA")
         pvals_feats_a = filter_features_by_ANOVA(feats_a, targets)
 
-    logger.info(f"Number of features dropped by ANOVA: {len(feats_a.index) - (pvals_feats_a['pval'] < p_thres).sum()}")
+    logger.info(f"Number of features dropped by using T-test or ANOVA: "
+                f"{len(feats_a.index) - (pvals_feats_a['pval'] < p_thres).sum()}")
     feats_a = feats_a.loc[(pvals_feats_a['pval'] < p_thres)]
     if not features_b is None:
+        # If features_b is provided, features are included only it past T-test requirements for both feat_a and feat_b
         pvals_feats_b = filter_features_by_T_test(feats_b, targets)
-        feats_b = feats_a.loc[(pvals_feats_b['pval'] < p_thres).index]
+        feats_b = feats_b.loc[(pvals_feats_b['pval'] < p_thres).index]
+        feats_a = feats_a.loc[feats_a.index.intersection(features_b.index)]
+        feats_b = feats_b.loc[feats_a.index]
 
     return feats_a, feats_b
 
