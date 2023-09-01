@@ -803,6 +803,7 @@ class FeatureSelector(object):
             :func:`computeICC`
 
     """
+    MC_STRATS = ('ovr')
     def __init__(self,
                  *, # not used
                  criteria_threshold: Optional[Sequence[int]] = (0.9, 0.5, 0.99),
@@ -813,6 +814,7 @@ class FeatureSelector(object):
                  return_freq:        Optional[bool] = False,
                  boosting:           Optional[bool] = True,
                  ICC_form:           Optional[str]  = 'ICC2k',
+                 multi_class:        Optional[str]  = None,
                  **kwargs # not used
                  ):
         super(FeatureSelector, self).__init__()
@@ -827,12 +829,13 @@ class FeatureSelector(object):
             'thres_percentage': thres_percentage,
             'return_freq': return_freq,
             'boosting': boosting,
-            'ICC_form': ICC_form
+            'ICC_form': ICC_form,
+            'multi_class': multi_class
         }
         self.saved_state = {
             'selected_features': None,
             'feat_freq': None,
-            'setting': setting
+            'setting': setting,
         }
 
     @property
@@ -863,11 +866,12 @@ class FeatureSelector(object):
             raise ArithmeticError("There are nothing to save.")
         joblib.dump(self.saved_state, filename=f.with_suffix('.fss'))
 
-    def fit(self,
+    def fit_(self,
             X_a: pd.DataFrame,
             y:   Union[pd.DataFrame, pd.Series],
             X_b: Optional[pd.DataFrame]=None) -> Union[Tuple, pd.DataFrame]:
-        r"""
+        r"""Fit to select features from input. This method is for binary classification models only.
+
         Args:
             X_a (pd.DataFrame):
                 Radiomics features. Each row should be a datapoint, each column should be a feature.
@@ -882,6 +886,8 @@ class FeatureSelector(object):
             feats (pd.DataFrame):
                 feats is the tuple fo (features frequency, features tuple)
         """
+        assert y.nunique() == 2, "This method is for binary classification only."
+
         feats = bootstrapped_features_selection(X_a.T,
                                                 y,
                                                 X_b.T if X_b is not None else None,
@@ -893,20 +899,68 @@ class FeatureSelector(object):
                                                 return_freq=True,
                                                 boosting=self.setting['boosting'],
                                                 ICC_form=self.setting['ICC_form'])
-        if len(feats[1]) == 0:
-            msg = "No features returned. The `thres_percentage` setting might be too high, try tunning it down."
-            raise ArithmeticError(msg)
-        self._logger.info(f"Selected {len(feats[1])} features: {feats[1]}")
+        return feats
 
-        self.saved_state['selected_features'] = feats[1]
-        self.saved_state['feat_freq'] = feats[0]
-        if self.setting['return_freq']:
-            return feats
-        else:
-            if X_b is not None:
-                return X_a[feats[1]], X_b[feats[1]]
+
+    def fit(self,
+            X_a: pd.DataFrame,
+            y:   Union[pd.DataFrame, pd.Series],
+            X_b: Optional[pd.DataFrame]=None,
+            ) -> Union[Tuple, pd.DataFrame]:
+        r"""Wrapper for deciding if the classification is for
+
+        Args:
+            X_a (pd.DataFrame):
+                Radiomics features. Each row should be a datapoint, each column should be a feature.
+            y (pd.DataFrame or pd.Series):
+                Class of the data. Each row should be a datapoint for DataFrame. It should only have one value column
+                corresponding to the status of each patient.
+            X_b (pd.DataFrame, Optional):
+                Radiomics features from another segmentation. Aims to filter away features that are susceptable to
+                inter-observer changes in the segmentation. Default to None.
+
+        Returns:
+            feats (pd.DataFrame):
+                feats is the tuple fo (features frequency, features tuple)
+        """
+        if not self.multi_class:
+            feats = self.fit_(X_a, y, X_b)
+            if len(feats[1]) == 0:
+                msg = "No features returned. The `thres_percentage` setting might be too high, try tunning it down."
+                raise ArithmeticError(msg)
+
+            self._logger.info(f"Selected {len(feats[1])} features: {feats[1]}")
+            self.saved_state['selected_features'] = feats[1]
+            self.saved_state['feat_freq'] = feats[0]
+            if self.setting['return_freq']:
+                return feats
             else:
-                return X_a[feats[1]], None
+                if X_b is not None:
+                    return X_a[feats[1]], X_b[feats[1]]
+                else:
+                    return X_a[feats[1]], None
+        else:
+            # check if input is really multi-class
+            if y.nunique() <= 2:
+                raise ArithmeticError("Multi-class option is specified, but input is binary")
+            # check if multi-class strategies is correct
+            if not self.multi_class in self.__class__.MC_STRATS:
+                raise ValueError(f"`multi_class` must be one of the followings: [{','.join(self.__class__.MC_STRATS)}],"
+                                 f"got {self.multi_class} instead.")
+            if self.multi_class == 'ovr':
+                # convert y into OVR binary if its not already it
+                _y = pd.get_dummies(_y, columns = y.unique()) if y.ndim < 2 else y
+
+                # each column is a class
+                num_class = _y.shape[1]
+
+                feats_list = []
+                for i in range(num_class):
+                    y_binary = _y[_y.columns[i]]
+                    feats_list.append(self.fit_(X_a, y_binary, X_b))
+                return out
+            else:
+                raise NotImplementedError("Required multi-class strategy is not implemented.")
 
     def predict(self, X_a: pd.DataFrame) -> pd.DataFrame:
         r"""
