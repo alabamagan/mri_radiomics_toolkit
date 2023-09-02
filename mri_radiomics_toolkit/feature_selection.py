@@ -574,6 +574,10 @@ def supervised_features_selection(features: pd.DataFrame,
         selected_features = pd.MultiIndex.from_tuples([_map[i] for i in selected_features])
 
     else:
+        num_classes = np.unique(_targets.values).sum()
+        if num_classes > 1:
+            # Raise error because this function doesn't support multi-class classification yet.
+            raise ArithmeticError("Input target is not binary. This method only supports binary classification.")
         model = RENT.RENT_Regression(data=pd.DataFrame(features.T),
                                      target=_targets[_targets.columns[0]].to_numpy().ravel(),
                                      feat_names=_features_names,
