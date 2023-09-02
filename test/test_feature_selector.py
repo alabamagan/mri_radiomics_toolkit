@@ -108,7 +108,22 @@ class Test_selector(unittest.TestCase):
         sf = features_selection(self.features_a, self.gt, features_b=self.features_b, n_trials=5,
                                 criteria_threshold=(0.9, 0.1, 0))
 
+    def test_feature_selection_multiclass(self):
+        np.random.seed(4213215)
+        gt_mc = np.random.randint(0, 3, size=len(self.gt))
+        gt_mc = pd.DataFrame(gt_mc, index=self.gt.index, columns=self.gt.columns)
+        # Run feature selection
+        sf = features_selection(self.features_a, gt_mc, features_b=self.features_b, n_trials=5,
+                                criteria_threshold=(0.9, 0.1, 0), ICC_p_thres=0.9)
+
     def test_preliminary_feature_filtering(self):
         np.random.seed(4213215)
         # Run feature selection
         sf = preliminary_feature_filtering(self.features_a, self.features_b, self.gt)
+
+    def test_preliminary_feature_filtering_multiclass(self):
+        np.random.seed(4213215)
+        gt_mc = np.random.randint(0, 3, size=len(self.gt))
+        gt_mc = pd.DataFrame(gt_mc, index=self.gt.index, columns=self.gt.columns)
+        # Run feature selection
+        sf = preliminary_feature_filtering(self.features_a, self.features_b, gt_mc)

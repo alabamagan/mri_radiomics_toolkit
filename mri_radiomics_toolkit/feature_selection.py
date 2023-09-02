@@ -465,12 +465,15 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
         logger.info("Using ANOVA")
         pvals_feats_a = filter_features_by_ANOVA(feats_a, targets)
 
-    logger.info(f"Number of features dropped by using T-test or ANOVA: "
+    logger.info(f"Number of features dropped by using T-test or ANOVA for first feature set: "
                 f"{len(feats_a.index) - (pvals_feats_a['pval'] < p_thres).sum()}")
     feats_a = feats_a.loc[(pvals_feats_a['pval'] < p_thres)]
     if not features_b is None:
         # If features_b is provided, features are included only it past T-test requirements for both feat_a and feat_b
-        pvals_feats_b = filter_features_by_T_test(feats_b, targets)
+        if len(np.unique(targets)) <= 2:
+            pvals_feats_b = filter_features_by_T_test(feats_b, targets)
+        else:
+            pvals_feats_b = filter_features_by_ANOVA(feats_b, targets)
         feats_b = feats_b.loc[(pvals_feats_b['pval'] < p_thres).index]
         feats_a = feats_a.loc[feats_a.index.intersection(features_b.index)]
         feats_b = feats_b.loc[feats_a.index]
@@ -632,7 +635,8 @@ def features_selection(features_a: pd.DataFrame,
                        n_trials=500,
                        criteria_threshold=(0.9, 0.5, 0.99),
                        boosting: bool = True,
-                       ICC_form: Optional[str] = 'ICC2k'):
+                       ICC_form: Optional[str] = 'ICC2k',
+                       ICC_p_thres: Optional[float] = 0.01):
     r"""Performs feature selection using a wrapper function that executes preliminary feature filtering,
     normalization of features, and supervised feature selection (RENT/BRENT).
 
@@ -664,7 +668,7 @@ def features_selection(features_a: pd.DataFrame,
     logger = MNTSLogger['model_building']
 
     # Initial feature filtering using quantitative methods
-    feats_a, feats_b = preliminary_feature_filtering(features_a, features_b, targets, ICC_form='ICC2k')
+    feats_a, feats_b = preliminary_feature_filtering(features_a, features_b, targets, ICC_form='ICC2k', p_thres=ICC_p_thres)
 
     # Note: Because initial feature filtering relies on variance and ICC, it is not proper to normalize the data prior
     #       to this because it alters the mean and variance of the features.
