@@ -447,7 +447,7 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
         feats_a = features_a.loc[_icc90_feats]
         feats_b = features_b.loc[_icc90_feats]
     else:
-        self.logger.info("Second feature set not found. ICC filtering skipped. ")
+        logger.info("Second feature set not found. ICC filtering skipped. ")
         feats_a = features_a.loc[var_feats_a_index]
         feats_b = None
 
@@ -502,8 +502,12 @@ def supervised_features_selection(features: pd.DataFrame,
     This function inherits some arguements from RENT. See :func:`RENT.RENT_Regression` for more.
 
     .. notes::
+        References:
         * [1] Jenul, Anna, et al. "RENT--Repeated Elastic Net Technique for Feature Selection."
               arXiv preprint arXiv:2009.12780 (2020).
+
+    .. notes::
+        This methods assumes input is already scalar normalized.
 
     Args:
         features (pd.DataFrame):
@@ -557,18 +561,40 @@ def supervised_features_selection(features: pd.DataFrame,
         # Warn if boost is not 0
         if boosting:
             logger.warning("n_trials = 1 but boosting was turned on.")
+        # Normalize shape of the target
+        if np.unique(_targets.values).sum() > 2:
+            logger.info("Multi-class target encountered.")
+            if len(_targets.columns) > 1:
+                raise ArithmeticError("Cannot handle multi-class multi-task classification.")
+            # Change it into one hot vector
+            _onehot = pd.get_dummies(_targets.values.ravel())
+            _onehot.index = _targets.index
+            _targets = _onehot
+        _targets = _targets.values
 
         # if the l1_ratio is an array
         if isinstance(l1_ratio, (list, tuple, np.ndarray)):
             l1_ratio = l1_ratio[0]
         model = linear_model.ElasticNet(alpha = alpha, l1_ratio=l1_ratio, tol=1E-5)
         model.fit(pd.DataFrame(features.T),
-                  _targets[_targets.columns[0]].to_numpy().ravel())
+                  _targets)
 
-        # Non-zero coef means the feature is selcted
-        selected_features = np.argwhere(model.coef_ != 0).ravel()
-        selected_features = features.index[selected_features]
-        logger.info(f"ENET features: {selected_features}")
+        # Non-zero coef means the feature is selected
+        non_zero_coef = np.argwhere(model.coef_ != 0)
+        if model.coef_.ndim == 2:
+            # For multi-class, features getting non-zero coefficients in any of the class model are included
+            non_zero_coef = np.unique(non_zero_coef[:, 1])
+
+        # If there's a limit to the number of features used
+        if len(non_zero_coef) > n_features:
+            # Rank the features by the magnitude of the coefficients
+            ordered_nzc = np.abs(model.coef_[:, non_zero_coef].mean(axis=0)).argsort()[::-1]
+            non_zero_coef = ordered_nzc[:n_features]
+
+        # Gather the indices
+        selected_features = features.index[non_zero_coef.ravel()]
+        logger.debug(f"ENET features: {selected_features}")
+        logger.info(f"Features dropped by ENet {len(features.index) - len(selected_features)}")
 
         # Construct pd index
         selected_features = pd.MultiIndex.from_tuples([_map[i] for i in selected_features])
@@ -577,7 +603,8 @@ def supervised_features_selection(features: pd.DataFrame,
         num_classes = np.unique(_targets.values).sum()
         if num_classes > 1:
             # Raise error because this function doesn't support multi-class classification yet.
-            raise ArithmeticError("Input target is not binary. This method only supports binary classification.")
+            raise ArithmeticError("Input target is not binary. Boosted RENT only supports binary classification. "
+                                  "Set `n_trials` to 1 to disable Boosted RENT.")
         model = RENT.RENT_Regression(data=pd.DataFrame(features.T),
                                      target=_targets[_targets.columns[0]].to_numpy().ravel(),
                                      feat_names=_features_names,
@@ -937,7 +964,7 @@ class FeatureSelector(object):
             feats (pd.DataFrame):
                 feats is the tuple fo (features frequency, features tuple)
         """
-        if not self.multi_class:
+        if not self.saved_state['multi_class']:
             feats = self.fit_(X_a, y, X_b)
             if len(feats[1]) == 0:
                 msg = "No features returned. The `thres_percentage` setting might be too high, try tunning it down."
@@ -958,10 +985,10 @@ class FeatureSelector(object):
             if y.nunique() <= 2:
                 raise ArithmeticError("Multi-class option is specified, but input is binary")
             # check if multi-class strategies is correct
-            if not self.multi_class in self.__class__.MC_STRATS:
+            if not self.saved_state['multi_class'] in self.__class__.MC_STRATS:
                 raise ValueError(f"`multi_class` must be one of the followings: [{','.join(self.__class__.MC_STRATS)}],"
-                                 f"got {self.multi_class} instead.")
-            if self.multi_class == 'ovr':
+                                 f"got {self.saved_state['multi_class']} instead.")
+            if self.saved_state['multi_class'] == 'ovr':
                 # convert y into OVR binary if its not already it
                 _y = pd.get_dummies(_y, columns = y.unique()) if y.ndim < 2 else y
 
