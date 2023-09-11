@@ -964,7 +964,7 @@ class FeatureSelector(object):
             feats (pd.DataFrame):
                 feats is the tuple fo (features frequency, features tuple)
         """
-        if not self.saved_state['multi_class']:
+        if not self.setting['multi_class']:
             feats = self.fit_(X_a, y, X_b)
             if len(feats[1]) == 0:
                 msg = "No features returned. The `thres_percentage` setting might be too high, try tunning it down."
@@ -985,10 +985,10 @@ class FeatureSelector(object):
             if y.nunique() <= 2:
                 raise ArithmeticError("Multi-class option is specified, but input is binary")
             # check if multi-class strategies is correct
-            if not self.saved_state['multi_class'] in self.__class__.MC_STRATS:
+            if not self.setting['multi_class'] in self.__class__.MC_STRATS:
                 raise ValueError(f"`multi_class` must be one of the followings: [{','.join(self.__class__.MC_STRATS)}],"
-                                 f"got {self.saved_state['multi_class']} instead.")
-            if self.saved_state['multi_class'] == 'ovr':
+                                 f"got {self.setting['multi_class']} instead.")
+            if self.setting['multi_class'] == 'ovr':
                 # convert y into OVR binary if its not already it
                 _y = pd.get_dummies(_y, columns = y.unique()) if y.ndim < 2 else y
 
