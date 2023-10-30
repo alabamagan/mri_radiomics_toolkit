@@ -11,24 +11,54 @@ from mnts.mnts_logger import MNTSLogger
 from typing import Union
 
 from . import FeatureExtractor, FeatureSelector, ModelBuilder
-from .utils import compress, decompress
 
 __all__ = ['Controller']
 
 class Controller(object):
-    r"""
+    r"""A controller class for managing feature extraction, selection, and model building.
+
+    This class provides a high-level API to manage and control the feature extraction, selection,
+    and model building instances.
+
     Args:
+        *args:
+            Variable length argument list.
+        setting (str, Optional):
+            Path to a YAML file containing settings for the feature extractor, feature selector,
+            and model builder modules. If this is provided, the settings are read from the file
+            during initialization.
         with_norm (bool, Optional):
-            If specified, the images and segmentation are normalized using the yaml file specified by
-            the option `
+            If set to True, normalization is performed using settings from the YAML file specified
+            in `setting`. Default is False.
+        **kwargs:
+            Arbitrary keyword arguments.
 
     Attributes:
         extractor (FeatureExtractor):
-            Module for extracting feature, `with_norm` option is passed to this.
+            The feature extractor module. It is responsible for extracting features from the data.
         selector (FeatureSelector):
-            Module for selecting features.
+            The feature selector module. It is responsible for selecting the most relevant features
+            from the extracted features.
         model_builder (ModelBuilder):
-            Module for model building.
+            The model builder module. It is responsible for building a predictive model using the
+            selected features.
+        _with_norm (bool):
+            Determines if normalization should be performed based on the value passed to `with_norm`
+            during initialization.
+        _setting (str):
+            Holds the path to the YAML settings file if provided during initialization.
+        _logger (MNTSLogger):
+            Logger for Controller class.
+        _receved_params (dict):
+            Dictionary to store any additional keyword arguments received during initialization.
+        saved_state (dict):
+            Dictionary to store the current state of the pipeline. It includes:
+             - 'extractor': Instance of the FeatureExtractor.
+             - 'selector': Instance of the FeatureSelector.
+             - 'model': Instance of the ModelBuilder.
+             - 'setting': Current setting.
+             - 'norm_ready': A boolean indicating whether the normalization is ready.
+             - 'predict_ready': A boolean indicating whether the model is ready for prediction.
 
     """
     def __init__(self,
@@ -79,19 +109,37 @@ class Controller(object):
         self.saved_state['model'] = val
 
     def read_setting(self, f: Path) -> dict:
-        r"""
-        Settings Available:
-            Extractor:
-                id_globber
+        r"""Reads and updates the settings for the feature extractor, selector, and controller.
 
-            Selector:
-                criteria_threshold
-                n_trials
-                boot_runs
-                boot_ratio
-                thres_percentage
-                return_freq
-                boosting
+        This method reads the settings from a YAML file and updates the settings of the feature
+        extractor, feature selector, and the controller. The method also handles the case where
+        the settings are already loaded and stored in the 'setting_file_stream' of the 'saved_state'
+        attribute.
+
+        Settings Available:
+        - **Extractor**:
+            - `id_globber` (str)
+        - **Selector**:
+            - `criteria_threshold` (float)
+            - `n_trials` (int)
+            - `boot_runs` (int)
+            - `boot_ratio` (float)
+            - `thres_percentage` (float)
+            - `return_freq` (float)
+            - `boosting` (bool)
+
+        Args:
+            f (Path):
+                The path to a YAML file containing the settings.
+
+        Returns:
+            dict:
+                A dictionary containing the loaded settings.
+
+        Raises:
+            FileNotFoundError:
+                Raised when no file or saved settings are available to read from.
+
         """
         if not f is None:
             f = Path(f)
