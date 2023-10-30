@@ -592,7 +592,10 @@ def supervised_features_selection(features: pd.DataFrame,
         # If there's a limit to the number of features used
         if len(non_zero_coef) > n_features:
             # Rank the features by the magnitude of the coefficients
-            ordered_nzc = np.abs(model.coef_[:, non_zero_coef].mean(axis=0)).argsort()[::-1]
+            if model.coef_.ndim == 2:
+                ordered_nzc = np.abs(model.coef_[:, non_zero_coef].mean(axis=0)).argsort()[::-1]
+            elif model.coef_.ndim == 1:
+                ordered_nzc = np.abs(model.coef_[non_zero_coef].ravel()).argsort()[::-1]
             non_zero_coef = ordered_nzc[:n_features]
 
         # Gather the indices
