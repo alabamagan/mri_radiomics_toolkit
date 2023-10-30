@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple, Union, Any
 import joblib
 import pandas as pd
 import numpy as np
+import sklearn.exceptions
 from mnts.mnts_logger import MNTSLogger
 from sklearn import *
 from sklearn.model_selection import *
@@ -46,15 +47,17 @@ def cv_grid_search(train_features: pd.DataFrame,
                    test_targets: Optional[pd.DataFrame] = None,
                    verbose: Optional[bool] = False,
                    classifiers: Optional[str] = None,
+                   fit_params: Optional[dict] = {},
+                   clf: Optional[pipeline.Pipeline] = None,
                    **kwargs) -> Tuple[dict, pd.DataFrame, pd.DataFrame, Any]:
-    r"""
-    Grid search for best hyper-parameters for the following linear models:
-      * SVM
-      * Logistic regresion
-      * Random forest
-      * K-nearest-neighbour
-      * Elastic Net
+    r"""Grid search for best hyper-parameters for training pipeline specified by `clf`. 
 
+    You can specify `test_features` and `test_targets` to chose the best model based on a hold out testing data, instead
+    of basing the model performance on training set CV. The output would then include the AUC score of the model trained
+    dudring the CV. 
+    
+    f `classifiers` is specified, only the methods in `classifiers`
+    will be trained.
 
     Args:
         train_features (pd.DataFrame):
@@ -71,6 +74,10 @@ def cv_grid_search(train_features: pd.DataFrame,
             This can be one of the keys of `param_grid_dict`: ['Support Vector Regression'|'Elastic Net'|'Logistic
             Regression'|'Random Forest'|'Perceptron'|'KNN']. If specified, only that method will be trained. Default
             to None
+        fit_params (dict, Optional):
+            This is passed to `fit` of GridSearchCV.
+        clf (pipeline.Pipeline, Optional):
+            Pipeline for grid search.
         **kwargs (dict):
             Keyword arguments for GridSearchCV.
 
@@ -84,13 +91,13 @@ def cv_grid_search(train_features: pd.DataFrame,
         best_estimator (Any):
             The sklearn estimator.
 
-    """
+    """ # noqa
     logger = MNTSLogger['model-building']
 
     clf = pipeline.Pipeline([
         ('standardization', preprocessing.StandardScaler()),
         ('classification', 'passthrough')
-    ])
+    ]) if clf is None else clf
 
     if verbose:
         raise DeprecationWarning(f"This option is deprecated.")
@@ -114,15 +121,6 @@ def cv_grid_search(train_features: pd.DataFrame,
     scoring = kwargs.pop('scoring', 'roc_auc')
     n_jobs = kwargs.pop('n_jobs', 10)
 
-    # # handle for multiclass targets
-    # if train_targets.nunique() > 2:
-    #     logger.info("Multiclass targets detected. Using one-vs-rest scheme if `scoring` is not specified.")
-    #     scoring = 'roc_auc_ovr' if scoring == 'roc_auc' else scoring
-    #
-    #     available_scorings = (
-    #         'roc_auc_ovr', 'roc_auc_ovo', 'roc_auc_ovr_weighted', 'roc_auc_ovo_weighted'
-    #     )
-
     best_params = {}
     best_estimators = {}
     results = {}
@@ -134,7 +132,16 @@ def cv_grid_search(train_features: pd.DataFrame,
         grid = GridSearchCV(clf, n_jobs=n_jobs, param_grid=param_grid, scoring=scoring,
                             cv=split, verbose=MNTSLogger.is_verbose, **kwargs
                             )
-        grid.fit(train_features.values, train_targets.values.ravel())
+
+        try:
+            grid.fit(train_features.values, train_targets.values.ravel(), **fit_params)
+        except sklearn.exceptions.NotFittedError:
+            logger.warning(f"Model is not fitted for {key}")
+            best_estimators[f"{key}"] = None
+            best_params[key] = None
+            results[f'{key} (train)'] = None
+            results[f'{key}'] = None
+            continue
 
         # Isolate best estimator
         best_estimators[f"{key}"] = grid.best_estimator_
@@ -144,13 +151,16 @@ def cv_grid_search(train_features: pd.DataFrame,
         train_score = grid.score(train_features.values,
                                  y = train_targets.values)
         results[f'{key} (train)'] = train_score
+        logger.debug(f"Train score: {train_score}")
 
         # If testing set exist, evalute performance on the testing set
         if not (test_features is None or test_targets is None):
+            logger.info(f"Evaluating on testing set for {key}")
             y = grid.predict(test_features.values)
             test_score = metrics.roc_auc_score(test_targets.values.ravel(),
                                                y)
             results[f'{key}'] = test_score
+            logger.debug(f"Test score: {test_score}")
             predict_table.append(pd.Series(y, index=test_targets.index, name=f"{key}"))
         logger.info("{:-^100}".format(f"Done for {key}"))
 
@@ -250,6 +260,8 @@ class ModelBuilder(object):
         if any([v is None for v in self.saved_state.values()]):
             raise ArithmeticError("There are nothing to save.")
         joblib.dump(self.saved_state, filename=f.with_suffix('.pkl'))
+
+
 
     def cv_fit(self,
                train_features: pd.DataFrame,
