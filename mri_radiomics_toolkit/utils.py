@@ -42,14 +42,20 @@ def calculate_class_weights(y: Union[np.ndarray, Iterable]) -> np.ndarray:
 
 
 def compress(in_str):
-    r"""Compresses a string using gzip and base64 encodes it.
+    r"""Compresses a string using gzip and base64 encodes it. This function is used to compress
+    the settings for controller intiializastion. However, this is no longer used. Settings are
+    saved as file-stream binaries now.
 
     Args:
         string (str): The string to compress.
 
     Returns:
         str: The base64 encoded gzip compression of the input string.
-    """
+    
+    .. note::
+        This function is no longer used. See :class:`Controller` for more.
+        
+    """ # noqa
     compressed_stream = io.BytesIO()
     gzip_stream = gzip.GzipFile(fileobj=compressed_stream, mode='wb')
     gzip_stream.write(in_str.encode('utf-8'))
@@ -58,6 +64,7 @@ def compress(in_str):
     b64_content = base64.b64encode(compressed)
     ascii_content = b64_content.decode('ascii')
     return ascii_content
+
 
 def decompress(string):
     r"""Decompresses a gzipped and base64 encoded string.
@@ -69,8 +76,11 @@ def decompress(string):
     Returns:
         str:
             The original uncompressed string. Return None if the input is invalid.
-
-    """
+            
+    Raise: 
+        OSError:
+            Raised when input string is not a valid compressed string.
+    """ # noqa
     try:
         b64_decoded = base64.b64decode(string)
         decompressed_stream = io.BytesIO(b64_decoded)
@@ -79,6 +89,7 @@ def decompress(string):
     except OSError:
         raise ArithmeticError('Invalid input, not a compressed string')
 
+
 def is_compressed(string):
     """Checks if a string is compressed.
 
@@ -86,13 +97,14 @@ def is_compressed(string):
         string (str): The string to check.
     Returns:
         bool: True if the string is compressed, False otherwise.
-    """
+    """ # noqa
     # Attempt to decompress the string
     try:
         decompress(string)
         return True
     except:
         return False
+
 
 def zipdir(path, ziph):
     r"""
@@ -105,23 +117,45 @@ def zipdir(path, ziph):
 
 
 class ExcelWriterProcess:
-    r"""
-    A singleton class that wraps a separate process which writes pandas Series to an Excel file.
+    r"""A singleton class for managing a separate process to write pandas Series or DataFrame to an Excel file.
+
+    This class manages an independent process that writes pandas data structures to an Excel file.
+    The data is passed via a multiprocessing queue, which is then written to the Excel file by the
+    separate process. This class is designed as a singleton, so only one instance will ever exist
+    during the program execution and that read-write is thread safe.
 
     Attributes:
-        output_file (str):
-            The path to the output Excel file.
+        output_file (Union[Path, str]):
+            The file path to the output Excel file. This can be a string or a Path object.
         queue (multiprocessing.Queue):
-            The queue for communication between processes.
+            The multiprocessing queue used to pass data between the main process and the writing process.
         process (multiprocessing.Process):
-            The subprocess that does the writing.
-    """
+            The separate process that performs the writing of data to the Excel file.
+
+    Examples:
+    >>>from mri_radiomics_toolkit.utils import ExcelWriterProcess
+    >>># initialize the writer process with the output file
+    >>>writer = ExcelWriterProcess('output.xlsx')
+    >>>
+    >>># start the writer process
+    >>>writer.start()
+    >>>
+    >>># create a pandas DataFrame
+    >>>df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
+    >>>
+    >>># send the DataFrame to the writer process
+    >>>writer.write(df)
+    >>>
+    >>># stop the writer process
+    >>>writer.stop()
+    """ # noqa
     _instance = None
     def __init__(self, output_file: Union[Path, str]):
-        r"""Initialize the ExcelWriterProcess with an output file path.
+        r"""Initialize the ExcelWriterProcess instance with an output file path.
 
         Args:
-            output_file (str): The path to the output Excel file.
+            output_file (Union[Path, str]):
+                The file path to the output Excel file. This can be a string or a Path object.
         """
         self.manager = Manager()
         self.queue = self.manager.Queue()
@@ -140,10 +174,17 @@ class ExcelWriterProcess:
 
     @classmethod
     def write(cls, data: Union[pd.Series, pd.DataFrame]) -> None:
-        r"""Send a pandas Series to the writer subprocess to write it to the Excel file.
+        r"""Sends a pandas Series or DataFrame to the writer subprocess.
+
+        The data is placed in a queue and is written to the Excel file by the writer subprocess.
 
         Args:
-            data (pd.Series or pd.DataFrame): The pandas Series to write.
+            data (Union[pd.Series, pd.DataFrame]):
+                The pandas Series or DataFrame to write.
+
+        Raises:
+            ArithmeticError:
+                If this method is called before an instance of ExcelWriterProcess is created.
         """
         if cls._instance is None:
             raise ArithmeticError("Write must only be called after a writer instance is created.")
@@ -159,11 +200,16 @@ class ExcelWriterProcess:
 
     @staticmethod
     def _run(queue: Queue, output_file: Union[str, Path]) -> None:
-        """The function that runs in the writer subprocess, which writes pandas Series to the Excel file.
+        r"""Writes pandas Series or DataFrame to the Excel file in the writer subprocess.
+
+        This function runs in the separate writer process and writes data from the queue to the
+        Excel file. The data is written in batches to optimize performance.
 
         Args:
-            queue (multiprocessing.Queue): The queue for receiving pandas Series from the main process.
-            output_file (str): The output file where the series will be written to.
+            queue (multiprocessing.Queue):
+                The queue for receiving pandas Series or DataFrame from the main process.
+            output_file (Union[str, Path]):
+                The file path to the output Excel file. This can be a string or a Path object.
         """
         cache = []
         last_flush = time.time()
