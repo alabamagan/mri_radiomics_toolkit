@@ -549,8 +549,8 @@ def supervised_features_selection(features: pd.DataFrame,
     # Align targets and features, assume target.index $\in$ features.columns
     if not targets.index.to_list() == features.columns.to_list():
         logger.warning("Discrepancy found in case identifiers in target and features, trying to align them!")
-        logger.debug(f"Target: {','.join(targets.index.to_list())}")
-        logger.debug(f"features: {','.join(features.columns.to_list())}")
+        logger.debug(f"Target: {','.join([str(a) for a in targets.index.to_list()])}")
+        logger.debug(f"features: {','.join([str(a) for a in features.columns.to_list())]}")
         _targets = targets.loc[features.columns]
     else:
         _targets = targets
