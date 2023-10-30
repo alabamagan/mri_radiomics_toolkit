@@ -1,10 +1,13 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from mnts.mnts_logger import MNTSLogger
 from sklearn import *
 from sklearn.model_selection import *
 from imblearn.over_sampling import SMOTE
+
 from typing import Iterable, Union, Optional, Tuple, Any
+from numpy.typing import NDArray
 
 def generate_cross_validation_samples(X: pd.DataFrame,
                                       y: pd.Series,
@@ -39,8 +42,12 @@ def generate_cross_validation_samples(X: pd.DataFrame,
             the training and validation data for a cross-validation split.
 
     .. note::
-        The class balancing is done on the training data only. The original class proportions are
-        maintained in the testing data.
+        Performing SMOTE before cross-validation split introduce data leakage becuase CV does not consider
+        the synthesized data and its synthesize source. Therefore, many synthesized data points and their
+        sources could exist simultaneously in the training and testing set, i.e., the testing data or its
+        sytnehsizing sources are already seen during training. This is inapproprieate and cannot accurately
+        reflect the performance of a model. Therefore, this function yields Kfold splits and only performs
+        SMOTE *after* the cross-validation split.
     """
     kf = KFold(n_splits=n_splits, random_state=random_state, shuffle=True)
     for train_index, test_index in kf.split(X):
@@ -52,3 +59,33 @@ def generate_cross_validation_samples(X: pd.DataFrame,
         X_train_resampled, y_train_resampled = smote.fit_resample(X_train, y_train)
 
         yield X_train_resampled, X_test, y_train_resampled, y_test
+
+
+class StratifiedSMOTEKFold(StratifiedKFold):
+    r"""This class is written to carry out SMOTE during cross-validation.
+
+    See Also:
+        :class:`sklearn.model_selection.StratifiedKFold`
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+    def split(self,
+              X: Union[NDArray, pd.DataFrame],
+              y: Union[NDArray, pd.Series],
+              groups=None) -> Iterable[Union[Tuple[NDArray, NDArray, NDArray, NDArray]]]:
+        for train_index, test_index in super().split(X, y, groups):
+            if isinstance(X, np.ndarray) and isinstance(y, np.ndarray):
+                X_train, X_test = X[train_index], X[test_index]
+                y_train, y_test = y[train_index], y[test_index]
+            elif isinstance(X, pd.DataFrame) and isinstance(y, (pd.Series, pd.DataFrame)):
+                X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+                y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+            else:
+                raise TypeError("X and y must be numpy arrays or pandas DataFrames/Series .")
+
+
+            smote = SMOTE(random_state=self.random_state)
+            X_train_resampled, y_train_resampled = smote.fit_resample(X_train, y_train)
+            yield X_train_resampled, X_test, y_train_resampled, y_test
