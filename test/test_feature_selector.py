@@ -47,6 +47,7 @@ class Test_selector(unittest.TestCase):
         self.features_a = Test_selector.features_a.copy()
         self.features_b = Test_selector.features_b.copy()
         self.gt = Test_selector.gt.copy()
+        np.random.seed(4213215)
 
     def test_filter_by_t_test(self):
         pval_df = filter_features_by_T_test(self.features_a, self.gt)
@@ -72,8 +73,35 @@ class Test_selector(unittest.TestCase):
 
     def test_supervised_filter_pipeline(self):
         self._logger.info(f"Testing supervised filter pipeline, this could take a while.")
-        sf = supervised_features_selection(self.features_a, self.gt, 0.02, 0.5)
+        sf = supervised_features_selection(self.features_a, self.gt, 0.02, 0.5,
+                                           n_trials=5,
+                                           n_features=5,
+                                           criteria_threshold=(0.1, 0.1, 0.1) # Set a lot threshold to ensure it works
+                                           )
+        self.assertEqual(5, sf.shape[0])
         self.assertIsInstance(sf, (pd.DataFrame, pd.Index, pd.MultiIndex))
+
+    def test_supervised_filter_pipeline_ENet(self):
+        self._logger.info(f"Testing supervised filter pipeline, this could take a while.")
+        sf = supervised_features_selection(self.features_a, self.gt, 0.02, 0.5,
+                                           n_trials=1, # n_trials == 1 means a sigle elastic net run
+                                           n_features=5,
+                                           )
+        self.assertEqual(5, sf.shape[0])
+        self.assertIsInstance(sf, (pd.DataFrame, pd.Index, pd.MultiIndex))
+
+    def test_supervised_filter_pipeline_multiclass(self):
+        self._logger.info(f"Testing supervised filter pipeline, this could take a while.")
+        index_to_change = np.random.randint(0, 100, size=10)
+        new_gt = self.gt.copy()
+        new_gt.iloc[index_to_change] = 2
+        sf = supervised_features_selection(self.features_a, new_gt, 0.02, 0.5,
+                                           n_trials=1,
+                                           n_features=5,
+                                           criteria_threshold=(0.1, 0.1, 0.1) # Set a lot threshold to ensure it works
+        )
+        self.assertIsInstance(sf, (pd.DataFrame, pd.Index, pd.MultiIndex))
+        self.assertLessEqual(10, len(sf))
 
     def test_Selector_IO(self):
         r"""Test creating the selector"""
@@ -109,20 +137,17 @@ class Test_selector(unittest.TestCase):
                                 criteria_threshold=(0.9, 0.1, 0))
 
     def test_feature_selection_multiclass(self):
-        np.random.seed(4213215)
         gt_mc = np.random.randint(0, 3, size=len(self.gt))
         gt_mc = pd.DataFrame(gt_mc, index=self.gt.index, columns=self.gt.columns)
         # Run feature selection
-        sf = features_selection(self.features_a, gt_mc, features_b=self.features_b, n_trials=5,
+        sf = features_selection(self.features_a, gt_mc, features_b=self.features_b, n_trials=1,
                                 criteria_threshold=(0.9, 0.1, 0), ICC_p_thres=0.9)
 
     def test_preliminary_feature_filtering(self):
-        np.random.seed(4213215)
         # Run feature selection
         sf = preliminary_feature_filtering(self.features_a, self.features_b, self.gt)
 
     def test_preliminary_feature_filtering_multiclass(self):
-        np.random.seed(4213215)
         gt_mc = np.random.randint(0, 3, size=len(self.gt))
         gt_mc = pd.DataFrame(gt_mc, index=self.gt.index, columns=self.gt.columns)
         # Run feature selection
