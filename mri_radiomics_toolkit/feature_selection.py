@@ -9,6 +9,7 @@ import pandas as pd
 import pingouin as pg
 import sklearn
 import warnings
+
 from mnts.mnts_logger import MNTSLogger
 from scipy.stats import *
 from sklearn import feature_selection as skfs
@@ -1024,3 +1025,64 @@ class FeatureSelector(object):
             raise ArithmeticError("No information about selected features. Have you run fit()?")
 
         return X_a[self.saved_state['selected_features']]
+
+
+
+class ENetSelector(linear_model.ElasticNet):
+    r"""This class is a wrapper of ElasticNet for writing it into :class:`sklearn.pipeline.Pipeline`.
+
+    The purpose is to use Elastic net as a feature selection method rather than as a classifier.
+    """
+    def fit(self, X, y, sample_weight=None, check_input=True):
+        to_return = super().fit(X, y, sample_weight=sample_weight, check_input=check_input)
+
+        # Remember name of features
+        if isinstance(X, pd.DataFrame):
+            self.feature_names_in_ = X.columns
+        elif isinstance(X, np.ndarray):
+            # Otherwise remember its dimension
+            self.feature_names_in_ = X.shape[1]
+
+        # Find out what features has non-zero indices
+        non_zero_features = np.argwhere(self.coef_ != 0)
+        if self.coef_.ndim == 2:
+            # For multi-class, features getting non-zero coefficients in any of the class model are included
+            non_zero_features = np.unique(non_zero_features[:, 1])
+        else:
+            non_zero_features = non_zero_features.ravel()
+
+        # Memorize it
+        self.selected_feature_names_ =\
+            self.feature_names_in_[non_zero_features] if isinstance(X, pd.DataFrame) else None
+        self.selected_feature_indices_ = non_zero_features
+
+        if len(self.selected_feature_indices_) == 0:
+            raise ArithmeticError("No features have been selected, fitting was likely unsuccessful.")
+
+        # Construct pd index
+        # selected_features = pd.MultiIndex.from_tuples([_map[i] for i in selected_features])
+        return to_return
+
+
+    def predict(self, X: Union[pd.DataFrame, np.ndarray]) -> Union[pd.DataFrame, np.ndarray]:
+        r"""
+
+        Args:
+            X: {ndarray, sparse matrix} of (n_samples, n_features) Data.
+
+        Returns:
+
+        """
+        if not self.n_features_in_:
+            raise ValueError("No features have been selected, have you run `fit`?")
+
+        # Try to
+        if not self.selected_feature_names_ is None and isinstance(X, pd.DataFrame):
+            return X[self.selected_feature_names_]
+        elif isinstance(X, np.ndarray):
+            return X[:, self.selected_feature_indices_]
+        else:
+            raise NotImplementedError("Why are you here?")
+
+    def transform(self, *args) -> Union[pd.DataFrame, np.ndarray]:
+        return self.predict(*args)
