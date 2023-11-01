@@ -1029,11 +1029,49 @@ class FeatureSelector(object):
 
 
 class ENetSelector(linear_model.ElasticNet):
-    r"""This class is a wrapper of ElasticNet for writing it into :class:`sklearn.pipeline.Pipeline`.
+    r"""Wrapper of ElasticNet for feature selection in sklearn.pipeline.Pipeline.
 
-    The purpose is to use Elastic net as a feature selection method rather than as a classifier.
+    This class is a utility that takes an ElasticNet model, fits it, and uses the coefficients
+    to select features. This implementation works as a transformer, meaning that it can be used
+    inside a sklearn.pipeline.Pipeline and the transform/predict methods select the features instead
+    of predicting the target variable.
+
+    Attributes:
+        feature_names_in_ ({ndarray, None}): Names of the features if the input data is a DataFrame or
+            number of features if the input data is an ndarray.
+        selected_feature_names_ ({ndarray, None}): Names of the selected features if the input data is
+            a DataFrame, None otherwise.
+        selected_feature_indices_ (ndarray): Indices of the selected features.
+        n_features_in_ (int): The number of features when :meth:`fit` is performed.
+
+    .. note::
+        Inherits from sklearn.linear_model.ElasticNet.
+
+    See Also:
+        :class:`sklearn.linear_model.ElasticNet`
     """
+
     def fit(self, X, y, sample_weight=None, check_input=True):
+        r"""Fit the model according to the given training data.
+
+        After fitting, it stores the names or the number of features from X, and identifies
+        non-zero coefficients to select features.
+
+        Args:
+            X (ndarray or pd.DataFrame):
+                Training vectors, where n_samples is the number of samples
+                and n_features is the number of features.
+            y (ndarray or pd.Series):
+                Target values. Will be cast to X's dtype if necessary.
+                sample_weight (ndarray, default=None): Individual weights for each sample.
+                check_input (bool, default=True): Allow to bypass several input checking.
+
+        Returns:
+            self : object
+
+        Raises:
+            ArithmeticError: If no features have been selected during the fit.
+        """
         to_return = super().fit(X, y, sample_weight=sample_weight, check_input=check_input)
 
         # Remember name of features
@@ -1065,13 +1103,27 @@ class ENetSelector(linear_model.ElasticNet):
 
 
     def predict(self, X: Union[pd.DataFrame, np.ndarray]) -> Union[pd.DataFrame, np.ndarray]:
-        r"""
+        """Selects features from X based on the non-zero coefficients found during fit.
+
+        .. notes::
+            This does not change the value of the input features. You need to make sure the feature order is the
+            same as when you train this instance if you are inputting numpy arrays. This method have no way to
+            access this information. It is recommended that you input pandas dataframe to ensure the selected
+            features are the same (you also need to train this instance with pandas dataframe in this case).
 
         Args:
-            X: {ndarray, sparse matrix} of (n_samples, n_features) Data.
+            X (ndarray or pd.DataFrame):
+                Vectors of n_samples by n_features from which to select features.
 
         Returns:
+            (ndarray or pd.DataFrame}):
+                Transformed X with only the selected features.
 
+        Raises:
+            ValueError:
+                If no features have been selected during the fit.
+            NotImplementedError:
+                If `X` is not a DataFrame or ndarray.
         """
         if not self.n_features_in_:
             raise ValueError("No features have been selected, have you run `fit`?")
