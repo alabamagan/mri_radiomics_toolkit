@@ -10,3 +10,4 @@ mri-normalization-tools >= 0.1
 seaborn
 RENT
 torchio
+imblearn
