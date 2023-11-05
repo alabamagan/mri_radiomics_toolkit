@@ -9,6 +9,7 @@ from mnts.mnts_logger import MNTSLogger
 from sklearn import *
 from sklearn.model_selection import *
 from .models.cards import default_cv_grid_search_card
+from .data_split import generate_cross_validation_samples
 
 __all__ = ['cv_grid_search', 'ModelBuilder', 'neg_log_loss']
 
@@ -49,8 +50,9 @@ def cv_grid_search(train_features: pd.DataFrame,
                    classifiers: Optional[str] = None,
                    fit_params: Optional[dict] = {},
                    clf: Optional[pipeline.Pipeline] = None,
+                   n_splits: Optional[int] = 5,
                    **kwargs) -> Tuple[dict, pd.DataFrame, pd.DataFrame, Any]:
-    r"""Grid search for best hyper-parameters for training pipeline specified by `clf`. 
+    r"""Grid search for best hyper-parameters for training pipeline specified by `clf`.
 
     You can specify `test_features` and `test_targets` to chose the best model based on a hold out testing data, instead
     of basing the model performance on training set CV. The output would then include the AUC score of the model trained
@@ -78,6 +80,8 @@ def cv_grid_search(train_features: pd.DataFrame,
             This is passed to `fit` of GridSearchCV.
         clf (pipeline.Pipeline, Optional):
             Pipeline for grid search.
+        n_splits (int, Optional):
+            Number of folds in K-fold CV. Default to 5.
         **kwargs (dict):
             Keyword arguments for GridSearchCV.
 
@@ -91,7 +95,7 @@ def cv_grid_search(train_features: pd.DataFrame,
         best_estimator (Any):
             The sklearn estimator.
 
-    """ # noqa
+    """
     logger = MNTSLogger['model-building']
 
     clf = pipeline.Pipeline([
@@ -125,7 +129,9 @@ def cv_grid_search(train_features: pd.DataFrame,
     best_estimators = {}
     results = {}
     predict_table = [test_targets] if not test_targets is None else []
-    splitter = model_selection.StratifiedKFold(n_splits=5, shuffle=True)
+
+    # for all models, use the same splitter to ensure the data split is the same
+    splitter = model_selection.StratifiedKFold(n_splits=n_splits, shuffle=True)
     for key, param_grid in param_grid_dict.items():
         logger.info("{:-^100}".format(f"Fitting for {key}"))
         split = splitter.split(train_targets, train_targets.values.ravel())
@@ -157,8 +163,8 @@ def cv_grid_search(train_features: pd.DataFrame,
         if not (test_features is None or test_targets is None):
             logger.info(f"Evaluating on testing set for {key}")
             y = grid.predict(test_features.values)
-            test_score = metrics.roc_auc_score(test_targets.values.ravel(),
-                                               y)
+            test_score = scoring(test_targets.values.ravel(),
+                                 y)
             results[f'{key}'] = test_score
             logger.debug(f"Test score: {test_score}")
             predict_table.append(pd.Series(y, index=test_targets.index, name=f"{key}"))

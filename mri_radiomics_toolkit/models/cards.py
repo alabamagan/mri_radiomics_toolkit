@@ -51,7 +51,7 @@ default_cv_grid_search_card = {
 # default setting for grid search
 multi_class_cv_grid_search_card = {
     'Support Vector Regression': {
-        'classification': [svm.SVC(tol=1E-4, max_iter=-1, probability=True)],
+        'classification': [svm.SVC(tol=1E-4, max_iter=-1, probability=True, decision_function_shape='ovr')],
         'classification__kernel': ['linear', 'poly', 'rbf'],
         'classification__C': [1, 100, 1000],
         'classification__degree': [3, 5, 7],

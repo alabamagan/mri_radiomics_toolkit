@@ -1,6 +1,8 @@
 import unittest
 import pandas as pd
 import pytest
+import sklearn.metrics as metrics
+
 from mri_radiomics_toolkit.perf_metric import *
 import numpy as np
 
@@ -35,3 +37,19 @@ class Test_Top_k(unittest.TestCase):
 
         with self.assertWarns(UserWarning):
             result = top_k_accuracy_score_(y_true, y_score_int, k = 2, labels=[0, 1, 2, 3, 4])
+
+    def test_same_as_sklearn(self):
+        r"""Test if the wrapper return results identical as sklearn.metrics.top_k_accuracy_score"""
+        y_true      = [0, 1, 2, 1, 2, 1, 0, 0]
+        y_score_int = [0, 0, 0, 1, 0, 1, 0, 2]
+        y_score_float = np.array(y_score_int).astype(float)
+
+        # test int score
+        result = top_k_accuracy_score_(y_true, y_score_int, k=1)
+        expected = metrics.top_k_accuracy_score(y_true, pd.get_dummies(y_score_int), k = 1)
+        self.assertEqual(expected, result)
+
+        # Test if float score is problematic
+        result = top_k_accuracy_score_(y_true, y_score_float.astype(int), k=1)
+        expected = metrics.top_k_accuracy_score(y_true, pd.get_dummies(y_score_float), k = 1)
+        self.assertEqual(expected, result)

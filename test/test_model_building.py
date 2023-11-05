@@ -38,9 +38,7 @@ class Test_ModelBuilding(unittest.TestCase):
     def test_model_building(self):
         from sklearn.model_selection import train_test_split
 
-        p_feat_a = Path('test_data/assets/samples_feat_1st.xlsx')
-        p_gt = Path('test_data/assets/sample_datasheet.csv')
-        p_fss = Path('test_data/assets/fs_saved_state.fss')
+        p_feat_a, p_gt, p_fss = self._prepare_samples()
 
         features = pd.read_excel(str(p_feat_a), index_col=[0, 1, 2]).T
         gt = pd.read_csv(str(p_gt), index_col=0)
@@ -94,9 +92,7 @@ class Test_ModelBuilding(unittest.TestCase):
 
     def test_cv_grid_search(self):
         # Setup the configurations
-        p_feat_a = Path('test_data/assets/samples_feat_1st.xlsx')
-        p_gt = Path('test_data/assets/sample_datasheet.csv')
-        p_fss = Path('test_data/assets/fs_saved_state.fss')
+        p_feat_a, p_gt, p_fss = self._prepare_samples()
 
         # Load the data
         features = pd.read_excel(str(p_feat_a), index_col=[0, 1, 2]).T
@@ -111,6 +107,34 @@ class Test_ModelBuilding(unittest.TestCase):
         # Call the function
         best_params, results, predict_table, best_estimators = (
             cv_grid_search(features.iloc[:20], gt.iloc[:20], None, None))
+
+    def _prepare_samples(self):
+        p_feat_a = Path('test_data/assets/samples_feat_1st.xlsx')
+        p_gt = Path('test_data/assets/sample_datasheet.csv')
+        p_fss = Path('test_data/assets/fs_saved_state.fss')
+        return p_feat_a, p_gt, p_fss
+
+    def test_cv_grid_search_with_smote(self):
+        r"""Test CV grid search with SMOTE"""
+        from mri_radiomics_toolkit.data_split import generate_cross_validation_samples
+        # Setup the configurations
+        p_feat_a, p_gt, p_fss = self._prepare_samples()
+
+        # Load the data
+        features = pd.read_excel(str(p_feat_a), index_col=[0, 1, 2]).T
+        gt = pd.read_csv(str(p_gt), index_col=0)
+        cases = list(set(features.index) & set(gt.index))
+        gt = gt.loc[cases]
+        features = features.loc[cases]
+
+        # Drop diagnostics
+        features.drop(['diagnostics'], axis=1, inplace=True)
+
+        # Call the function
+        best_params, results, predict_table, best_estimators = (
+            cv_grid_search(features.iloc[:20], gt.iloc[:20], None, None,
+                           cv=generate_cross_validation_samples))
+
 
     def test_cv_grid_search_multi_class(self):
         from mri_radiomics_toolkit.models.cards import multi_class_cv_grid_search_card
