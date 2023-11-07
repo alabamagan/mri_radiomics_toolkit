@@ -592,6 +592,8 @@ def supervised_features_selection(features: pd.DataFrame,
 
         # If there's a limit to the number of features used
         if len(non_zero_coef) > n_features:
+            logger.info(f"Number of non-zero-coef features is {len(non_zero_coef)}, more than the specified "
+                         f"max number of features {n_features}")
             # Rank the features by the magnitude of the coefficients
             if model.coef_.ndim == 2:
                 ordered_nzc = np.abs(model.coef_[:, non_zero_coef].mean(axis=0)).argsort()[::-1]
@@ -601,7 +603,8 @@ def supervised_features_selection(features: pd.DataFrame,
 
         # Gather the indices
         selected_features = features.index[non_zero_coef.ravel()]
-        logger.debug(f"ENET features: {selected_features}")
+        logger.info(f"ENET selected {len(selected_features)} features.")
+        logger.debug(f"Selected features are: \n {selected_features}")
         logger.info(f"Features dropped by ENet {len(features.index) - len(selected_features)}")
 
         # Construct pd index
