@@ -337,7 +337,9 @@ def filter_features_by_ANOVA(features: pd.DataFrame,
     # warn about features that violates the equal variance assumption
     if any(levene_pvals.values <= .05):
         non_equal_var_features = levene_pvals.loc[levene_pvals <= .05].index
-        logger.warning(f"Equal variance assumption violated for target '{non_equal_var_features}'")
+        logger.warning(f"Equal variance assumption violated for {len(non_equal_var_features)}/{len(levene_pvals)} "
+                       f"targets")
+        logger.debug(f"Features with non-equal variance: '{non_equal_var_features}'")
 
     # Performing ANOVA
     anova_res = []
@@ -347,7 +349,7 @@ def filter_features_by_ANOVA(features: pd.DataFrame,
         f_statistic, p_value = f_oneway(*_feats)
         anova_res.append(pd.Series([f_statistic, p_value], index=["F", "pval"], name=_feat_name))
     anova_res = pd.concat(anova_res, axis=1).T
-    logger.debug(f"ANOVA results: \n{anova_res.to_string()}")
+    logger.info(f"ANOVA results: \n{anova_res.to_string()}")
     p_values = anova_res['pval']
     return p_values.to_frame()
 
@@ -562,7 +564,7 @@ def supervised_features_selection(features: pd.DataFrame,
     _map = {_f: o for _f, o in zip(_features_names, _ori_index)}
     features.index = _features_names
 
-    if n_trials <= 1: # One elastic net run
+    if n_trials <= 1: # One elastic net run, no need to use RENT
         # Warn if boost is not 0
         if boosting:
             logger.warning("n_trials = 1 but boosting was turned on.")
