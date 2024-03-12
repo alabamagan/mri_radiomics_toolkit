@@ -326,12 +326,3 @@ class Test_pipeline(unittest.TestCase):
         self._logger.info(f"Test results: \n{pd.Series(test_result, name='Test results').to_frame().to_string()}")
         test_result['Statistical Test'] = "Passed"
         self.assertFalse(all([x == "Passed" for x in test_result.items()]))
-
-
-
-if __name__ == '__main__':
-    te = Test_pipeline()
-    # te.test_controller_fit()
-    # te.test_feature_extractor()
-    # te.test_get_radiomics_features_w_aug()
-    te.test_controller_extraction()
