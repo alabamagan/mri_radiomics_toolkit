@@ -35,15 +35,15 @@ class Test_feature_extractor(unittest.TestCase):
         self._logger = self.cls_logger
 
         # set up test data
-        self.sample_img_dir = Path("test_data/image_mul_label")
-        self.sample_seg_dir = Path("test_data/segment_mul_label")
+        self.sample_img_dir = Path("test_data/images")
+        self.sample_seg_dir = Path("test_data/segment")
         self.sample_img_dir_mpi = Path("test_data/images")
         self.sample_seg_dir_mpi = Path("test_data/segment")
 
         # single sample pair
-        self.sample_img_1 = Path("test_data/image_mul_label/TEST01_img_t2wfs.nii.gz")
-        self.sample_seg_1 = Path("test_data/segment_mul_label/TEST01_segment.nii.gz")
-        self.sample_seg_1_bin = Path("test_data/segment_mul_label/TEST01_segment_binary.nii.gz")
+        self.sample_img_1 = Path("test_data/images/MRI_01.nii.gz")
+        self.sample_seg_1 = Path("test_data/segment/MRI_01.nii.gz")
+        self.sample_seg_1_bin = Path("test_data/segment/MRI_01.nii.gz")
 
         # pyradiomics settings
         self.settings_1 = Path("./test_data/test_pyrad_setting_1.yml")
