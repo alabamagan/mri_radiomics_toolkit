@@ -1,0 +1,27 @@
+imageType:
+  Original: {}
+  LBP2D:
+    lbp2DRadius: 0.9
+    lbp2DMethod: 'default'
+    force2D: True
+  Exponential: {}
+
+featureClass:
+  firstorder:
+    - Energy
+    - Entropy
+    - Kurtosis
+    - Maximum
+    - MeanAbsoluteDeviation
+    - Mean
+    - RobustMeanAbsoluteDeviation
+    - RootMeanSquared
+    - Skewness
+    - Uniformity
+    - Variance
+  shape:
+
+setting:
+  resampledPixelSpacing: [2, 2, 0]
+  binWidth: 1
+  preCrop: True

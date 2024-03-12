@@ -1,0 +1,11 @@
+Extractor:
+  id_globber: "^[0-9A-Z]+"
+  pyrad_param_file: "./test_data/assets/sample_pyrad_settings.yml"
+
+Selector:
+  criteria_threshold: [0.5,0.5, 0.5]  # Low inclusion criteria to keep the example running fast
+  n_trials: 2
+  boot_runs: 5
+  boot_ratio: [0.8, 1.0]
+  thres_percentage: 0.1
+
