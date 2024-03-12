@@ -141,7 +141,7 @@ def cv_grid_search(train_features: pd.DataFrame,
         if cv is None:
             split = splitter.split(train_targets, train_targets.values.ravel())
         else:
-            split = cv(train_targets, train-targets.values.ravel())
+            split = cv(train_targets, train_targets.values.ravel())
         grid = GridSearchCV(clf, n_jobs=n_jobs, param_grid=param_grid, scoring=scoring,
                             cv=split, verbose=MNTSLogger.is_verbose, **kwargs
                             )

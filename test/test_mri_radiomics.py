@@ -18,7 +18,7 @@ import pandas as pd
 class Test_pipeline(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.cls_logger = MNTSLogger("/tmp/", "Test_pipe", verbose=True, keep_file=False,
+        cls.cls_logger = MNTSLogger(".", "Test_pipe", verbose=True, keep_file=False,
                                     log_level='debug')
     
     @classmethod
