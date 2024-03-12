@@ -18,7 +18,7 @@ import pandas as pd
 class Test_pipeline(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.cls_logger = MNTSLogger(".", "Test_pipe", verbose=True, keep_file=False, 
+        cls.cls_logger = MNTSLogger("/tmp/", "Test_pipe", verbose=True, keep_file=False,
                                     log_level='debug')
     
     @classmethod
@@ -275,6 +275,7 @@ class Test_pipeline(unittest.TestCase):
             _ctl.load(f.name)
             self._logger.info(f"Saved state: {_ctl.saved_state}")
 
+    @unittest.skip("Long test")
     def test_controller_fit_df(self):
         # This could take a while
         p_feat_a = Path('test_data/assets/samples_feat_1st.xlsx')

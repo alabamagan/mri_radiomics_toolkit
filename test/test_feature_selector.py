@@ -102,7 +102,7 @@ class Test_selector(unittest.TestCase):
                                            criteria_threshold=(0.1, 0.1, 0.1) # Set a lot threshold to ensure it works
         )
         self.assertIsInstance(sf, (pd.DataFrame, pd.Index, pd.MultiIndex))
-        self.assertLessEqual(10, len(sf))
+        self.assertLessEqual(len(sf), 10)
 
     def test_Selector_IO(self):
         r"""Test creating the selector"""

@@ -349,7 +349,7 @@ def filter_features_by_ANOVA(features: pd.DataFrame,
         f_statistic, p_value = f_oneway(*_feats)
         anova_res.append(pd.Series([f_statistic, p_value], index=["F", "pval"], name=_feat_name))
     anova_res = pd.concat(anova_res, axis=1).T
-    logger.info(f"ANOVA results: \n{anova_res.to_string()}")
+    logger.debug(f"ANOVA results: \n{anova_res.to_string()}")
     p_values = anova_res['pval']
     return p_values.to_frame()
 
@@ -398,7 +398,7 @@ def preliminary_feature_filtering(features_a: pd.DataFrame,
 
     Args:
         features_a (pd.DataFrame):
-            Features extracted using segmentation set A.
+            Features extracted using segmentation set A. Expected input dimensions to be (n_features, n_samples)
         features_b (pd.DataFrame):
             Features extracted using segmentation set B. If None, some ICC parts will be skipped.
         targets (pd.DataFrame):
@@ -496,7 +496,7 @@ def supervised_features_selection(features: pd.DataFrame,
                                   l1_ratio: Union[float,Iterable[float]],
                                   *args,
                                   criteria_threshold: Iterable[float] = (0.8, 0.8, 0.99),
-                                  n_features: int = 25,
+                                  n_features: int = 5,
                                   n_splits: int = 5,
                                   n_trials: int = 100,
                                   boosting: bool = True,
@@ -518,9 +518,9 @@ def supervised_features_selection(features: pd.DataFrame,
 
     Args:
         features (pd.DataFrame):
-            Columns should be samples and rows should be features.
+            Dimensions should be (n_features, n_samples). Rows should be features, columns should because
         targets (pd.DataFrame):
-            Row should be samples and a column 'Status' should hold the class.
+            Row should be samples and a column 'Status' should hold the class. Dimension should be (n_samples,)
         alpha (float):
             Regularization term. Its `alpha` in scipy and `1/C` in sklearn. Default to 0.02.
         l1_ratio (float):

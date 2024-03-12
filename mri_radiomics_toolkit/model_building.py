@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional, Tuple, Union, Any
+from typing import List, Optional, Tuple, Union, Any, Callable
 
 import joblib
 import pandas as pd
@@ -51,6 +51,7 @@ def cv_grid_search(train_features: pd.DataFrame,
                    fit_params: Optional[dict] = {},
                    clf: Optional[pipeline.Pipeline] = None,
                    n_splits: Optional[int] = 5,
+                   splitter: Optional[Callable] = None,
                    **kwargs) -> Tuple[dict, pd.DataFrame, pd.DataFrame, Any]:
     r"""Grid search for best hyper-parameters for training pipeline specified by `clf`.
 
@@ -82,6 +83,8 @@ def cv_grid_search(train_features: pd.DataFrame,
             Pipeline for grid search.
         n_splits (int, Optional):
             Number of folds in K-fold CV. Default to 5.
+        splitter (Callable, Optional):
+            If exist, it is used to split the input.
         **kwargs (dict):
             Keyword arguments for GridSearchCV.
 
@@ -124,6 +127,7 @@ def cv_grid_search(train_features: pd.DataFrame,
     # Pop kwargs for GridSearchCV
     scoring = kwargs.pop('scoring', 'roc_auc')
     n_jobs = kwargs.pop('n_jobs', 10)
+    cv = kwargs.pop('cv', None)
 
     best_params = {}
     best_estimators = {}
@@ -134,7 +138,10 @@ def cv_grid_search(train_features: pd.DataFrame,
     splitter = model_selection.StratifiedKFold(n_splits=n_splits, shuffle=True)
     for key, param_grid in param_grid_dict.items():
         logger.info("{:-^100}".format(f"Fitting for {key}"))
-        split = splitter.split(train_targets, train_targets.values.ravel())
+        if cv is None:
+            split = splitter.split(train_targets, train_targets.values.ravel())
+        else:
+            split = cv(train_targets, train-targets.values.ravel())
         grid = GridSearchCV(clf, n_jobs=n_jobs, param_grid=param_grid, scoring=scoring,
                             cv=split, verbose=MNTSLogger.is_verbose, **kwargs
                             )
@@ -157,16 +164,25 @@ def cv_grid_search(train_features: pd.DataFrame,
         train_score = grid.score(train_features.values,
                                  y = train_targets.values)
         results[f'{key} (train)'] = train_score
-        logger.debug(f"Train score: {train_score}")
+        logger.info(f"Train score: {train_score:.05f}")
+
+        # Get the mean of the fold test score
+        mean_test_scores = np.mean(grid.cv_results_['mean_test_score'])
+        logger.debug(f"Individual internal test scores: {grid.cv_results_['mean_test_score']}")
+        logger.info(f"Mean internal test score: {mean_test_scores:.05f}")
+        results[f'{key} (mean test)'] = mean_test_scores
+
+        # Get the best score
+        logger.info(f"Best internal test score: {grid.best_score_:.05f}")
+        results[f'{key} (best internal test)'] = grid.best_score_
 
         # If testing set exist, evalute performance on the testing set
         if not (test_features is None or test_targets is None):
             logger.info(f"Evaluating on testing set for {key}")
-            y = grid.predict(test_features.values)
-            test_score = scoring(test_targets.values.ravel(),
-                                 y)
+            test_score = grid.score(test_features.values,
+                                    y = test_targets.values)
             results[f'{key}'] = test_score
-            logger.debug(f"Test score: {test_score}")
+            logger.info(f"Test score: {test_score:.05f}")
             predict_table.append(pd.Series(y, index=test_targets.index, name=f"{key}"))
         logger.info("{:-^100}".format(f"Done for {key}"))
 

@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import shutil
 import pprint
+import time
 from pathlib import Path
 
 import sklearn.model_selection
@@ -22,6 +23,7 @@ class Test_ModelBuilding(unittest.TestCase):
         cls.cls_logger = MNTSLogger(".", "Test_ModelBuilding", verbose=True, keep_file=False,
                                     log_level='debug')
         MNTSLogger.set_global_log_level('debug')
+        time.sleep(1)
 
 
     @classmethod

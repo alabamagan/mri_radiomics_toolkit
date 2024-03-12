@@ -19,10 +19,13 @@ In addition, this repo introduces a feature selection technique combing boosting
 
 # Installation
 
-Clone reprositories
+### Clone repo
 
+```
 git clone --recursive https://github.com/alabamagan/mri_radiomics_toolkit
-Install mnts
+```
+
+### Install mnts
 
 ```bash
 cd mri_radiomics_toolkits/ThirdParty/mnts
@@ -30,7 +33,7 @@ pip install .
 cd -
 ```
 
-Install the forked RENT
+### Install the forked RENT
 
 ```bash
 cd mri_radiomics_toolkit/ThirdPartyRENT
@@ -38,7 +41,7 @@ pip install .
 cd -
 ```
 
-Install this package
+### Finally, Install this package
 
 ```sh
 cd ../..
@@ -123,7 +126,7 @@ This program uses the logger from `mntk` for logging. This could be annoying for
 
 ## Feature Selector
 
-This package includes a feature selection method modified on top of the RENT algorithm, incorporating the combination of boosting and bagging, called BB-RENT.
+This package includes a feature selection method modified on top of the RENT algorithm, incorporating the combination of boosting and bagging, called BB-RENT. 
 
 ```mermaid
 graph LR
@@ -175,6 +178,14 @@ fs.save("features_selected.fs")
 fs.load("features_selected.fs")
 fs.predict(features_a.T)
 ```
+
+### Notes
+
+Currently, multi-class feature selection is not officially supported. However, many implementation of multi-class classifier are based on training multiple binary classifiers. For example, there's One-Vs-Rest strategy supported by `sklearn`. Once features were selected, you can build the model with this `sklearn` adaptor accordingly.
+
+## Model building
+
+By default, this package build classifier models by grid search strategy with cross validation. 
 
 # DataFrame convention
 
@@ -246,6 +257,7 @@ sys.module['old_name.old_method'] = mradtk.new_name.new_method
 * [ ]  Re-implement augmentation module as an optional installation requirement
 * [ ]  Doxygen for documentation
 * [ ]  Add examplesUpdate
+* [ ]  Add state version control module
 
 # Reference
 
