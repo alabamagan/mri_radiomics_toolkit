@@ -1,3 +1,4 @@
+import logging
 import multiprocessing as mpi
 import os
 import pprint
@@ -15,6 +16,7 @@ import SimpleITK as sitk
 import joblib
 import numpy as np
 import pandas as pd
+import radiomics
 from tqdm import tqdm
 from mnts.filters import MNTSFilterGraph
 from mnts.mnts_logger import MNTSLogger
@@ -381,6 +383,16 @@ class FeatureExtractor(object):
         self.by_slice = -1
         self._extracted_features = None
         self._logger = MNTSLogger[__class__.__name__]
+
+        # Try take over pyradiomics' logger
+        try:
+            rad_logger: logging.Logger = radiomics.logger
+            handlers = rad_logger.handlers
+            self._logger.add_handlers(handlers)
+            for h in handlers:
+                rad_logger.removeFilter(handlers)
+        except AttributeError:
+            pass
 
     @property
     def param_file(self):
