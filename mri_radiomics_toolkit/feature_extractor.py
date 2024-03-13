@@ -388,9 +388,9 @@ class FeatureExtractor(object):
         try:
             rad_logger: logging.Logger = radiomics.logger
             handlers = rad_logger.handlers
-            self._logger.add_handlers(handlers)
             for h in handlers:
                 rad_logger.removeFilter(handlers)
+            radiomics.logger = self._logger
         except AttributeError:
             pass
 
