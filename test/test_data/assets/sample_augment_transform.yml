@@ -1,0 +1,11 @@
+ToCanonical:
+  {}
+Resample:
+  - 'input'
+RandomAffine:
+  scales: [0.9, 1.1]
+  degrees: 10
+RandomFlip:
+  - 'lr'
+RandomNoise:
+  std: [0, 8]

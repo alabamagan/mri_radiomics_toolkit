@@ -716,6 +716,8 @@ def features_selection(features_a: pd.DataFrame,
 
     # Note: Because initial feature filtering relies on variance and ICC, it is not proper to normalize the data prior
     #       to this because it alters the mean and variance of the features.
+    if not len(feats_a):
+        raise ArithmeticError("All features are filtered away!")
 
     # Normalize remaining features for data-driven feature selection
     feats_a = features_normalization(feats_a)

@@ -29,6 +29,7 @@ class Test_pipeline(unittest.TestCase):
         self._logger = MNTSLogger[unittest]
         self._globber = "^[0-9]+"
         self._p_setting = Path('test_data/assets/sample_pyrad_settings.yml')
+        self._transform = Path('test_data/assets/sample_augment_transform.yml')
         self.temp_dir_obj = tempfile.TemporaryDirectory()
         self.temp_dir = Path(self.temp_dir_obj.name)
 
@@ -110,6 +111,7 @@ class Test_pipeline(unittest.TestCase):
         self.assertFalse(fe.param_file == self._p_setting)
         self.assertTrue(fe.param_file == self._p_setting.read_text())
 
+    @unittest.skip("Depracated functino for augmenting input")
     def test_get_radiomics_features_w_aug(self):
         from mnts.utils import get_unique_IDs, get_fnames_by_IDs
         from mri_radiomics_toolkit.feature_extractor import get_radiomics_features

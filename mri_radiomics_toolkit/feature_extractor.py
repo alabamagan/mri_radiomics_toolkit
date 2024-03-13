@@ -426,7 +426,7 @@ class FeatureExtractor(object):
             f = f.joinpath('saved_state.fe')
         # Always save the compressed version of the param file.
         if not is_compressed(self.saved_state['param_file']):
-            self.saved_state['param_file'] = compressed(self.param_file)
+            self.saved_state['param_file'] = compress(self.param_file)
         joblib.dump(self.saved_state, filename=f.with_suffix('.fe'))
 
 
