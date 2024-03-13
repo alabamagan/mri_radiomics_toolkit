@@ -44,7 +44,7 @@ class Test_selector(unittest.TestCase):
         cls.cls_logger.cleanup()
 
     def setUp(self) -> None:
-        self._logger = MNTSLogger('test selector')
+        self._logger = MNTSLogger('unit_test selector')
         self.features_a = Test_selector.features_a.copy()
         self.features_b = Test_selector.features_b.copy()
         self.gt = Test_selector.gt.copy()
@@ -190,14 +190,14 @@ class Test_custom_pipeline_components(unittest.TestCase):
         cls.cls_logger.cleanup()
 
     def setUp(self) -> None:
-        self._logger = MNTSLogger('test selector')
+        self._logger = MNTSLogger('unit_test selector')
         self.features_a = self.__class__.features_a.copy()
         self.features_b = self.__class__.features_b.copy()
         self.gt = self.__class__.gt.copy()
         np.random.seed(4213215)
 
     def test_ENetSelector_in_pipeline(self):
-        # test selector when input is dataframe
+        # unit_test selector when input is dataframe
         m = sklearn.pipeline.Pipeline([
             ('normalization', sklearn.preprocessing.StandardScaler()),
             ('selector', ENetSelector(alpha=0.1, l1_ratio=0.9)),
@@ -217,17 +217,17 @@ class Test_custom_pipeline_components(unittest.TestCase):
         self._logger.info(f"Test output: {out}")
 
     def test_ENetSelector_input(self):
-        # test DF input and transform
+        # unit_test DF input and transform
         selector = ENetSelector(alpha=0.1, l1_ratio=0.9)
         selector.fit(self.features_a.T, self.gt)
         X_selected = selector.transform(self.features_a.T)
         self._logger.info(f"X_selected: {X_selected.columns}")
 
-        # test numpy input and transform
+        # unit_test numpy input and transform
         selector.fit(self.features_a.T.to_numpy(), self.gt)
         X_selected = selector.transform(self.features_a.T.to_numpy())
 
-        # test multi-class gt
+        # unit_test multi-class gt
         gt_mc = np.random.randint(0, 3, size=len(self.gt))
         gt_mc = pd.DataFrame(gt_mc, index=self.gt.index, columns=self.gt.columns)
         selector.fit(self.features_a.T, gt_mc)

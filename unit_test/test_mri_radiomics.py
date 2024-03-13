@@ -51,13 +51,13 @@ class Test_pipeline(unittest.TestCase):
         self.assertTrue(self._p_setting.with_name('sample_features.xlsx').is_file())
         self._logger.info("Feature extraction pass...")
 
-        # test save state
+        # unit_test save state
         self._logger.info("{:-^50s}".format(" Testing save state "))
         fe.save(Path('test_data/assets/fe_saved_state.fe'))
         fe.save(Path(self.temp_dir))
         self.assertTrue(Path(self.temp_dir).joinpath('saved_state.fe').is_file())
 
-        # test load state
+        # unit_test load state
         self._logger.info("{:-^50s}".format(" Testing load state "))
         _fe = FeatureExtractor(id_globber=self._globber)
         _fe.load(Path(self.temp_dir).joinpath('saved_state.fe'))
@@ -81,12 +81,12 @@ class Test_pipeline(unittest.TestCase):
         self.assertTrue(self._p_setting.with_name('sample_features.xlsx').is_file())
         self._logger.info("Feature extraction pass...")
 
-        # test save state
+        # unit_test save state
         self._logger.info("{:-^50s}".format(" Testing save state "))
         fe.save(Path(self.temp_dir))
         self.assertTrue(Path(self.temp_dir).joinpath('saved_state.fe').is_file())
 
-        # test load state
+        # unit_test load state
         self._logger.info("{:-^50s}".format(" Testing load state "))
         _fe = FeatureExtractor(id_globber=self._globber)
         _fe.load(Path(self.temp_dir).joinpath('saved_state.fe'))
@@ -164,7 +164,7 @@ class Test_pipeline(unittest.TestCase):
             fs = FeatureSelector(n_trials=20, boot_runs=5,
                                  criteria_threshold=[0.1, 0.1, 0.1],
                                  thres_percentage=0.2,
-                                 boosting=True) # Use default criteria, test with boosting
+                                 boosting=True) # Use default criteria, unit_test with boosting
             test_result = {x: "Untested" for x in ['Single feature set',
                                                    'Two paired feature sets',
                                                    'Save/load',
@@ -239,7 +239,7 @@ class Test_pipeline(unittest.TestCase):
         p_pyrad    = Path('test_data/assets/sample_pyrad_settings.yml')
         p_fe_state = Path('test_data/assets/fe_saved_state.fe')
 
-        # extract feature was ported to the controller, test it
+        # extract feature was ported to the controller, unit_test it
         ctl = Controller(setting=p, with_norm=True)
         ctl.load_norm_settings(fe_state=p_fe_state)
         df = ctl.extract_feature(p_im, p_seg, py_rad_param_file=p_pyrad)
@@ -266,7 +266,7 @@ class Test_pipeline(unittest.TestCase):
         p_pyrad = Path('test_data/assets/sample_pyrad_settings.yml')
         p_fe_state = Path('test_data/assets/fe_saved_state.fe')
 
-        # extract feature was ported to the controller, test it
+        # extract feature was ported to the controller, unit_test it
         with tempfile.NamedTemporaryFile('wb', suffix='.ctl') as f:
             ctl = Controller(setting=p, with_norm=True)
             ctl.load_norm_settings(fe_state=p_fe_state)
@@ -277,7 +277,7 @@ class Test_pipeline(unittest.TestCase):
             _ctl.load(f.name)
             self._logger.info(f"Saved state: {_ctl.saved_state}")
 
-    @unittest.skip("Long test")
+    @unittest.skip("Long unit_test")
     def test_controller_fit_df(self):
         # This could take a while
         p_feat_a = Path('test_data/assets/samples_feat_1st.xlsx')

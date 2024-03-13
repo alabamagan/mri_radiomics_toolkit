@@ -54,7 +54,7 @@ class Test_ModelBuilding(unittest.TestCase):
             features = fs.predict(features)
             self._logger.info(f"Selected features are: {features.T}")
 
-            # Random train test split
+            # Random train unit_test split
             splitter = train_test_split(features.index, test_size=0.2)
             train_feats, test_feats = splitter
             self._logger.info(f"Training group: {train_feats}")

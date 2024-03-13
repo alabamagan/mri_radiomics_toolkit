@@ -7,7 +7,7 @@ from mri_radiomics_toolkit.utils import compress, decompress, is_compressed
 class Test_StringCompression(unittest.TestCase):
     def test_compress_decompress(self):
         """Compression and decompression should be inverses"""
-        text = 'This is a test string'
+        text = 'This is a unit_test string'
         compressed = compress(text)
         decompressed = decompress(compressed)
         self.assertEqual(text, decompressed)
@@ -35,7 +35,7 @@ class Test_StringCompression(unittest.TestCase):
         self.assertEqual(text, decompressed)
 
     def test_compressed_string(self):
-        text = 'This is a test string'
+        text = 'This is a unit_test string'
         compressed = compress(text)
         self.assertTrue(is_compressed(compressed))
         self.assertFalse(is_compressed(text))

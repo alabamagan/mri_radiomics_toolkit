@@ -34,7 +34,7 @@ class Test_feature_extractor(unittest.TestCase):
     def setUp(self):
         self._logger = self.cls_logger
 
-        # set up test data
+        # set up unit_test data
         self.sample_img_dir = Path("test_data/images")
         self.sample_seg_dir = Path("test_data/segment")
         self.sample_img_dir_mpi = Path("test_data/images")
@@ -102,8 +102,8 @@ class Test_feature_extractor(unittest.TestCase):
                 '65237tzltdZHffPugTFr2c0bfiq03exHRSHWilz3tidgApXW+doSmq0WMq2ayjIcehadI1XUFKOFykjMV' \
                 'rRHuTGQ1sIpz/+1Tva0qsuATMgwJNPu9AeiUQAbTAIAAA=='
             extractor.param_file = compressed_param_file
-            extractor.save(Path(tempdir) / 'test')
-            extractor.load(Path(tempdir) / 'test.fe')
+            extractor.save(Path(tempdir) / 'unit_test')
+            extractor.load(Path(tempdir) / 'unit_test.fe')
             self.assertEqual(extractor.param_file,
                              decompress(compressed_param_file))
 
@@ -131,7 +131,7 @@ class Test_feature_extractor(unittest.TestCase):
             df = pd.read_excel(tempdir + "/temp.xlsx", index_col=0, engine='openpyxl')
             self.assertTrue(df.equals(df_expected))
 
-            # test if writing dataframe works
+            # unit_test if writing dataframe works
             df.columns = ['test3', 'test4']
             writer = ExcelWriterProcess(tempdir + "/temp.xlsx")
             writer.start()

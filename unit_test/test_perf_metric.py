@@ -44,7 +44,7 @@ class Test_Top_k(unittest.TestCase):
         y_score_int = [0, 0, 0, 1, 0, 1, 0, 2]
         y_score_float = np.array(y_score_int).astype(float)
 
-        # test int score
+        # unit_test int score
         result = top_k_accuracy_score_(y_true, y_score_int, k=1)
         expected = metrics.top_k_accuracy_score(y_true, pd.get_dummies(y_score_int), k = 1)
         self.assertEqual(expected, result)
