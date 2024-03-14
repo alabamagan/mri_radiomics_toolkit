@@ -151,6 +151,9 @@ def get_radiomics_features(fn: Path,
             label_stat = sitk.LabelShapeStatisticsImageFilter()
             label_stat.Execute(_msk)
             val = set(label_stat.GetLabels())
+            
+            if len(val) == 0:
+                raise ValueError("The label file seems to be empty!")
 
             # Create a new binary image for each non-zero classes
             _msk = {v: _msk == v for v in val}
@@ -176,6 +179,7 @@ def get_radiomics_features(fn: Path,
                     # if features are to be extracted slice-by-slice
                     assert by_slice <= _binmsk.GetDimension(), \
                         f"by_slice is larger than dimension: {_binmsk.GetDimension()}"
+                    logger.info("Extracting features by slice...")
                     slice_cols = []
                     case_number = re.search(id_globber, fn.name).group()
                     for j in range(_binmsk.GetSize()[by_slice]):
@@ -234,6 +238,7 @@ def get_radiomics_features_from_folder(im_dir: Path,
                                        *args,
                                        id_globber: str = "^[0-9a-zA-Z]+",
                                        idlist: Iterable[str] = None,
+                                       num_worker: Optional[int] = 1,
                                        **kwargs) -> pd.DataFrame:
     r"""
     This pairs up the image and the segmentation files using the global regex globber
@@ -300,36 +305,42 @@ def get_radiomics_features_from_folder(im_dir: Path,
         z = repeat_zip(source, mask[0], [param_file])
     else:
         z = repeat_zip(source, mask[0], [param_file], *mask[1:])
-    with mpi.Manager() as manager:
-        # configure the progress bar
-        progress = manager.Value('i', 0)
-        pbar = tqdm(total=len(source), desc=f"Feature extraction", leave=True)
+        
+    if num_worker > 1:
+        with mpi.Manager() as manager:
+            # configure the progress bar
+            progress = manager.Value('i', 0)
+            pbar = tqdm(total=len(source), desc=f"Feature extraction", leave=True)
 
-        # create the worker pool
-        pool = mpi.Pool(mpi.cpu_count()) # pyradiomics also runs in multi-thread
-        func = partial(get_radiomics_features,
-                       id_globber=id_globber,
-                       mpi_progress=(manager.Lock(), progress), **kwargs)
+            # create the worker pool
+            pool = mpi.Pool(num_worker) # pyradiomics also runs in multi-thread
+            func = partial(get_radiomics_features,
+                        id_globber=id_globber,
+                        mpi_progress=(manager.Lock(), progress), **kwargs)
 
-        res = pool.starmap_async(func, z)
-        # Update progress bar
-        while not res.ready():
+            res = pool.starmap_async(func, z)
+            # Update progress bar
+            while not res.ready():
+                pbar.n = progress.value
+                pbar.refresh(nolock=False)
+                time.sleep(0.1)
+
+            # let the pbar finish last refresh
+            time.sleep(0.1)
             pbar.n = progress.value
             pbar.refresh(nolock=False)
-            time.sleep(0.1)
 
-        # let the pbar finish last refresh
-        time.sleep(0.1)
-        pbar.n = progress.value
-        pbar.refresh(nolock=False)
+            # close the pool
+            pool.close()
+            pool.join()
+            res = res.get()
 
-        # close the pool
-        pool.close()
-        pool.join()
-        res = res.get()
-
-        # closs the pbar
-        pbar.close()
+            # closs the pbar
+            pbar.close()
+    else:
+        res = []
+        for zz in z:
+            res.append(get_radiomics_features(*zz, id_globber=id_globber, **kwargs))
     df = pd.concat(res, axis=1)
     new_index = [o.split('_') for o in df.index]
     new_index = pd.MultiIndex.from_tuples(new_index, names=('Pre-processing', 'Feature_Group', 'Feature_Name'))
@@ -460,7 +471,8 @@ class FeatureExtractor(object):
                          idlist: Optional[Iterable[str]] = None,
                          param_file: Optional[Path] = None,
                          by_slice: Optional[int] = -1,
-                         stream_output: Optional[bool] = None) -> pd.DataFrame:
+                         stream_output: Optional[bool] = None, 
+                         num_workers: Optional[int] = 8) -> pd.DataFrame:
         """Extract features from image data based on the given parameters.
 
         Args:
@@ -527,7 +539,8 @@ class FeatureExtractor(object):
                                                     id_globber=self.id_globber,
                                                     idlist=idlist,
                                                     by_slice=by_slice,
-                                                    writer_func=ExcelWriterProcess.write if stream_output else None)
+                                                    writer_func=ExcelWriterProcess.write if stream_output else None, 
+                                                    num_worker=num_workers)
 
         self._extracted_features = df.T
         if self._extracted_features.index.nlevels > 1:
