@@ -384,15 +384,6 @@ class FeatureExtractor(object):
         self._extracted_features = None
         self._logger = MNTSLogger[__class__.__name__]
 
-        # Try take over pyradiomics' logger
-        try:
-            rad_logger: logging.Logger = radiomics.logger
-            handlers = rad_logger.handlers
-            for h in handlers:
-                rad_logger.removeFilter(handlers)
-            radiomics.logger = self._logger
-        except AttributeError:
-            pass
 
     @property
     def param_file(self):
