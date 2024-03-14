@@ -498,9 +498,12 @@ class FeatureExtractor(object):
 
         # if param_file is not Path and a string, write contents to tempfile
         try:
-            if Path(param_file).is_file():
-                self.param_file = param_file.open('r').read() # this will read param file to str and store it in
-                                                              # saved_state
+            if len(param_file) < os.pathconf('/', 'PC_NAME_MAX'):
+                if Path(param_file).is_file():
+                    self.param_file = param_file.open('r').read() # this will read param file to str and store it in
+                else:
+                    raise FileNotFoundError(f"Cannot open pyrad param file: {param_file}")
+            # saved_state
             elif isinstance(param_file, str):
                 # if the param_file is a string, test if its compressed
                 if is_compressed(param_file):
