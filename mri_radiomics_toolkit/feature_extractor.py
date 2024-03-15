@@ -491,6 +491,8 @@ class FeatureExtractor(object):
             stream_output (bool, optional):
                 If this is `True`, program will try to stream output using :class:`ExcelWriterProcess`.
                 Defaults to `False`.
+            num_workers (int, optional):
+                Number of workers for threaded feature extraction. Default to 1.
 
         Returns:
             pd.DataFrame: The DataFrame containing the extracted features.
