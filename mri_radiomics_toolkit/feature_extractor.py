@@ -109,6 +109,7 @@ def get_radiomics_features(fn: Path,
 
     try:
         logger = MNTSLogger['radiomics_features']
+        logger.info(f"Current thread: {mpi.current_process().name}")
         logger.debug(pprint.pformat({'Input': fn, 'Mask': mn, 'args': args}))
         im = sitk.ReadImage(str(fn))
         msk = sitk.ReadImage(str(mn))
@@ -122,7 +123,7 @@ def get_radiomics_features(fn: Path,
         for i, _msk in enumerate(msk):
             if not all(np.isclose(im.GetSpacing(), _msk.GetSpacing(), atol=1E-4)):
                 logger.warning(f"Detected differences in spacing! Resampling "
-                                                         f"{_msk.GetSpacing()} -> {im.GetSpacing()}...")
+                               f"{_msk.GetSpacing()} -> {im.GetSpacing()}...")
                 filt = sitk.ResampleImageFilter()
                 filt.SetInterpolator(sitk.sitkNearestNeighbor)
                 filt.SetReferenceImage(im)
@@ -180,9 +181,10 @@ def get_radiomics_features(fn: Path,
                     assert by_slice <= _binmsk.GetDimension(), \
                         f"by_slice is larger than dimension: {_binmsk.GetDimension()}"
                     logger.info("Extracting features by slice...")
+                    # try to get worker thread number
                     slice_cols = []
                     case_number = re.search(id_globber, fn.name).group()
-                    for j in range(_binmsk.GetSize()[by_slice]):
+                    for j in tqdm(range(_binmsk.GetSize()[by_slice]), position=1):
                         _index = [slice(None)] * by_slice + [j]
                         _slice_im = sitk.JoinSeries(im[_index])
                         _slice_seg = sitk.JoinSeries(_binmsk[_index])
@@ -285,7 +287,7 @@ def get_radiomics_features_from_folder(im_dir: Path,
 
     mask = []
     for i, msk in enumerate(mask_dir):
-        _source, _mask = load_supervised_pair_by_IDs(str(im_dir), str(msk), ids,
+        _source, _mask = load_supervised_pair_by_IDs(im_dir, msk, ids,
                                                     globber=id_globber, return_pairs=False)
         mask.append(_mask)
         if i == 0:
@@ -314,6 +316,7 @@ def get_radiomics_features_from_folder(im_dir: Path,
 
             # create the worker pool
             pool = mpi.Pool(num_worker) # pyradiomics also runs in multi-thread
+            logger.info(f"Multi-thread with {num_worker} workers.")
             func = partial(get_radiomics_features,
                         id_globber=id_globber,
                         mpi_progress=(manager.Lock(), progress), **kwargs)
