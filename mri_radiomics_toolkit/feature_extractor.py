@@ -58,6 +58,14 @@ def progress_bar_helper(_, pbar: Callable = None) -> None:
         raise ValueError("No progress bar.")
     pbar.update()
 
+def check_images_matches(image1: sitk.Image, image2: sitk.Image) -> bool:
+    r"""Checks if two images are in the same space"""
+    return (image1.GetDimension() == image2.GetDimension() and
+            image1.GetSize() == image2.GetSize() and
+            np.all(np.isclose(image1.GetOrigin(), image2.GetOrigin(), atol=1E-4)) and
+            np.all(np.isclose(image1.GetSpacing(), image2.GetSpacing(), atol=1E-4)) and
+            np.all(np.isclose(np.array(image1.GetDirection()).flatten(),
+                              np.array(image2.GetDirection()).flatten(), atol=1E-4)))
 
 def get_radiomics_features(fn: Path,
                            mn: Path,
@@ -65,9 +73,10 @@ def get_radiomics_features(fn: Path,
                            *args,
                            id_globber: str = "^[0-9a-zA-Z]+",
                            by_slice: int = -1,
-                           connected_components = False,
+                           connected_components: Optional[bool] = False,
                            writer_func: Optional[Callable] = None,
-                           mpi_progress: Optional[Tuple[Any, Any]] = None) -> pd.DataFrame:
+                           mpi_progress: Optional[Tuple[Any, Any]] = None,
+                           resample: Optional[bool] = False) -> pd.DataFrame:
     r"""
     Return the features computed by pyramdiomics in a `pd.DataFrame` structure. This data
     output will at most has three column levels. The primary level is `Study number`,
@@ -101,6 +110,9 @@ def get_radiomics_features(fn: Path,
             If not `None`, the data will be streamed to the specified file after each data
             is processed. The callable provided is called after the calculations are done
             with syntax `writer_func(df)`. Default to `None`
+        mpi_progress:
+        resample (bool, Optional):
+            If true, resmpale segmentation to image if there's a mismatch found.
     Returns:
         pd.DataFrame:
             DataFrame of features. Rows are features and columns are data points.
@@ -121,9 +133,11 @@ def get_radiomics_features(fn: Path,
             msk = [msk]
         # check if they have same spacing
         for i, _msk in enumerate(msk):
-            if not all(np.isclose(im.GetSpacing(), _msk.GetSpacing(), atol=1E-4)):
+            if not check_images_matches(_msk, im):
                 logger.warning(f"Detected differences in spacing! Resampling "
-                               f"{_msk.GetSpacing()} -> {im.GetSpacing()}...")
+                               f"Spacing: {_msk.GetSpacing()} -> {im.GetSpacing()} "
+                               f"Direction: {_msk.GetDirection()} -> {im.GetDirection()} "
+                               f"Origin: {_msk.GetOrigin()} -> {im.GetOrigin()} ")
                 filt = sitk.ResampleImageFilter()
                 filt.SetInterpolator(sitk.sitkNearestNeighbor)
                 filt.SetReferenceImage(im)
