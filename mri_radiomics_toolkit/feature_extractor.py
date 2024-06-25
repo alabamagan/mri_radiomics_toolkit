@@ -512,7 +512,7 @@ class FeatureExtractor(object):
                 Number of workers for threaded feature extraction. Default to 1.
 
         Returns:
-            pd.DataFrame: The DataFrame containing the extracted features.
+            pd.DataFrame: The DataFrame containing the extracted features. Dimensions are (n_samples, n_features).
 
         Raises:
             ArithmeticError: If no param file is specified.
@@ -562,8 +562,6 @@ class FeatureExtractor(object):
                                                     num_worker=num_workers)
 
         self._extracted_features = df.T
-        if self._extracted_features.index.nlevels > 1:
-            self._extracted_features.sort_index(level=0, inplace=True)
         return self._extracted_features
 
     def extract_features_with_norm(self,
