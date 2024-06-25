@@ -35,18 +35,18 @@ class Test_feature_extractor(unittest.TestCase):
         self._logger = self.cls_logger
 
         # set up unit_test data
-        self.sample_img_dir = Path("test_data/images")
-        self.sample_seg_dir = Path("test_data/segment")
-        self.sample_img_dir_mpi = Path("test_data/images")
-        self.sample_seg_dir_mpi = Path("test_data/segment")
+        self.sample_img_dir = Path("./test_data/images").absolute()
+        self.sample_seg_dir = Path("./test_data/segment").absolute()
+        self.sample_img_dir_mpi = Path("./test_data/images").absolute()
+        self.sample_seg_dir_mpi = Path("./test_data/segment").absolute()
 
         # single sample pair
-        self.sample_img_1 = Path("test_data/images/MRI_01.nii.gz")
-        self.sample_seg_1 = Path("test_data/segment/MRI_01.nii.gz")
-        self.sample_seg_1_bin = Path("test_data/segment/MRI_01.nii.gz")
+        self.sample_img_1 = Path("./test_data/images/MRI_01.nii.gz").absolute()
+        self.sample_seg_1 = Path("./test_data/segment/MRI_01.nii.gz").absolute()
+        self.sample_seg_1_bin = Path("./test_data/segment/MRI_01.nii.gz").absolute()
 
         # pyradiomics settings
-        self.settings_1 = Path("./test_data/test_pyrad_setting_1.yml")
+        self.settings_1 = Path("./test_data/test_pyrad_setting_1.yml").absolute()
 
 
     def test_get_radiomics_features(self):
@@ -146,8 +146,8 @@ class Test_feature_extractor(unittest.TestCase):
             temp_excelfile = f + '/temp.xlsx'
             writer = ExcelWriterProcess(temp_excelfile)
             writer.start()
-            df = get_radiomics_features_from_folder(self.sample_img_dir_mpi,
-                                                   self.sample_seg_dir_mpi,
+            df = get_radiomics_features_from_folder(self.sample_img_dir_mpi.absolute(),
+                                                   self.sample_seg_dir_mpi.absolute(),
                                                    self.settings_1,
                                                    id_globber="MRI_\d+",
                                                    writer_func=ExcelWriterProcess.write)
