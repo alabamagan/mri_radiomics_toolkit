@@ -311,9 +311,6 @@ def get_radiomics_features_from_folder(im_dir: Path,
                 raise IndexError(f"Length of the inputs are incorrect, somethings is wrong with index globbing for "
                                  f"{str(msk)}.")
 
-    source = [im_dir.joinpath(s) for s in source]
-    mask = [[mask_dir[i].joinpath(s) for s in mask[i]] for i in range(len(mask))]
-
     r"""
     Multi-thread
     """
