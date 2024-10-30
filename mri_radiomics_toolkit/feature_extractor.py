@@ -300,14 +300,22 @@ def get_radiomics_features_from_folder(im_dir: Path,
         mask_dir = [seg_dir]
 
     mask = []
+    source = None
     for i, msk in enumerate(mask_dir):
+        # For each mask dir, load the IDs that matches with the input dir
         _source, _mask = load_supervised_pair_by_IDs(im_dir, msk, ids,
                                                     globber=id_globber, return_pairs=False)
+        logger.debug(f"Find {len(_source)} pairs.")
+        if len(_source) != len(ids):
+            # This shouldn't happen.
+            raise RunTimeError("Something went wrong when pairing the images and masks")
         mask.append(_mask)
         if i == 0:
-            source = _source
+            source = _source # First is already a list
         else:
+            logger.info("Multiple masks detected.")
             if not len(source) == len(_source):
+                # If multiple masks are used, the IDs must perfectly align between all mask files and image files
                 raise IndexError(f"Length of the inputs are incorrect, somethings is wrong with index globbing for "
                                  f"{str(msk)}.")
 
@@ -317,6 +325,7 @@ def get_radiomics_features_from_folder(im_dir: Path,
     if len(mask) == 1:
         z = repeat_zip(source, mask[0], [param_file])
     else:
+        logger.info("Using multiple mask for extraction!")
         z = repeat_zip(source, mask[0], [param_file], *mask[1:])
         
     if num_worker > 1:
