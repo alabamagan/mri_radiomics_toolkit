@@ -494,7 +494,8 @@ class FeatureExtractor(object):
                          idlist: Optional[Iterable[str]] = None,
                          param_file: Optional[Path] = None,
                          by_slice: Optional[int] = -1,
-                         stream_output: Optional[bool] = None, 
+                         stream_output: Optional[bool] = None,
+                         connected_components: Optional[bool] = False,
                          num_workers: Optional[int] = 8) -> pd.DataFrame:
         """Extract features from image data based on the given parameters.
 
@@ -564,7 +565,8 @@ class FeatureExtractor(object):
                                                     id_globber=self.id_globber,
                                                     idlist=idlist,
                                                     by_slice=by_slice,
-                                                    writer_func=ExcelWriterProcess.write if stream_output else None, 
+                                                    writer_func=ExcelWriterProcess.write if stream_output else None,
+                                                    connected_components=connected_components,
                                                     num_worker=num_workers)
 
         self._extracted_features = df.T
