@@ -8,6 +8,7 @@ import joblib
 import pandas as pd
 import yaml
 from mnts.mnts_logger import MNTSLogger
+from mnts.utils import get_unique_IDs
 from typing import Union
 
 from . import FeatureExtractor, FeatureSelector, ModelBuilder
@@ -140,6 +141,10 @@ class Controller(object):
             FileNotFoundError:
                 Raised when no file or saved settings are available to read from.
 
+        .. See also::
+            - :class:`FeatureExtractor`
+            - :class:`FeatureSelector`
+
         """
         if not f is None:
             f = Path(f)
@@ -252,6 +257,14 @@ class Controller(object):
             raise AttributeError("Please set the pyradiomics parameter file first.")
         if with_normalization is not None:
             self._with_norm = bool(with_normalization)
+
+        # Align the ids first
+        id_globber = self.extractor.id_globber
+        matched_ids, missing_ids, duplicates = self.validate_ids(img_path, seg_path)
+        if any(len(mids) for mids in missing_ids.values()):
+            self._logger.warning(f"Find ID mismatch.")
+            self._logger.debug(f"{matched_ids = }\n{missing_ids = }")
+            raise AttributeError(f"ID globber ({id_globber}) is not set properly.")
 
         df_a = self.extract_feature(img_path, seg_path=seg_path) # rows are features columns are datapoints
         df_b = self.extract_feature(img_path, seg_path=seg_b_path) if seg_b_path is not None else None
@@ -408,3 +421,60 @@ class Controller(object):
     def selected_features(self, v):
         raise ArithmeticError("Selected features should not be manually assigned.")
 
+    def validate_ids(self, img_dir: Path, seg_dir: Path):
+        """
+        Validates and aligns image and segmentation IDs using the ID globber.
+
+        Args:
+            img_dir (Path):
+                Directory containing the image files.
+            seg_dir (Path):
+                Directory containing the segmentation files.
+
+        Returns:
+            tuple:
+                A tuple containing:
+                    - matched_ids (set):
+                        Set of IDs present in both images and segmentations.
+                    - missing_ids (dict):
+                        Dictionary with keys 'images' and 'segmentations' containing
+                        lists of missing IDs.
+                    - duplicates (dict):
+                        Dictionary with keys 'images' and 'segmentations' containing
+                        dictionaries of IDs with multiple files.
+
+        Raises:
+            AttributeError:
+                If the ID globber is not properly set.
+        """
+        # Only run after initialization
+        assert self.extractor is not None, "This instance has not been normalized"
+
+
+        # Get unique IDs with their associated files
+        image_id_dict = get_unique_IDs(img_dir.iterdir(),
+                                       self.extractor.id_globber,
+                                       return_dict=True)
+        seg_id_dict = get_unique_IDs(seg_dir.iterdir(),
+                                     self.extractor.id_globber,
+                                     return_dict=True)
+
+        # Find overlapping and missing IDs
+        image_ids = set(image_id_dict.keys())
+        seg_ids = set(seg_id_dict.keys())
+        matched_ids = image_ids.intersection(seg_ids)
+
+        missing_ids = {
+            'images': list(seg_ids - image_ids),
+            'segmentations': list(image_ids - seg_ids)
+        }
+
+        # Check for duplicates
+        duplicates = {
+            'images': {id_: files for id_, files in image_id_dict.items()
+                       if len(files) > 1 and id_ in matched_ids},
+            'segmentations': {id_: files for id_, files in seg_id_dict.items()
+                              if len(files) > 1 and id_ in matched_ids}
+        }
+
+        return matched_ids, missing_ids, duplicates

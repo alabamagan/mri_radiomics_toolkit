@@ -9,7 +9,7 @@ import time
 from functools import partial
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable, Optional, Sequence, Union, Callable, Tuple, Any
+from typing import Iterable, Optional, Sequence, Union, Callable, Tuple, Any, List
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import SimpleITK as sitk
@@ -23,7 +23,7 @@ from mnts.mnts_logger import MNTSLogger
 from mnts.scripts.normalization import run_graph_inference
 from mnts.utils import get_unique_IDs, load_supervised_pair_by_IDs, repeat_zip
 from radiomics import featureextractor
-from .utils import zipdir, compress, decompress, is_compressed, ExcelWriterProcess
+from .utils import zipdir, compress, decompress, is_compressed, ExcelWriterProcess, unify_dataframe_levels
 
 
 # Fix logger
@@ -281,16 +281,23 @@ def get_radiomics_features_from_folder(im_dir: Path,
     ids = get_unique_IDs(list([str(i.name) for i in im_dir.iterdir()]), id_globber)
 
     # Check if provided ID list can be found in the specified folder
-    if not idlist is None:
-        overlap = set.intersection(set(ids), set(idlist))
-        missing_idlist = set(idlist) - set(ids)
-        missing_files = set(ids) - set(idlist)
-        if len(missing_idlist):
-            # IDs that are not found in the target folder
-            logger.warning(f"Some of the specified ids cannot be founded: \n {missing_idlist}")
-        if len(missing_files):
-            # IDs that are not found in the specified idlist
-            logger.info(f"IDs filtered away: {missing_files}")
+    if idlist is not None:
+        ids_set = set(ids)
+        idlist_set = set(idlist)
+
+        # Find elements present in both sets
+        overlap = ids_set & idlist_set
+
+        # Find missing elements from both sets
+        missing_from_files = idlist_set - ids_set
+        missing_from_idlist = ids_set - idlist_set
+
+        if missing_from_files:
+            logger.warning(f"IDs specified in idlist but missing from target folder: \n{missing_from_files}")
+
+        if missing_from_idlist:
+            logger.warning(f"IDs found in target folder but not specified in idlist: \n{missing_from_idlist}")
+
         ids = overlap
 
     # Load the pairs
@@ -364,11 +371,15 @@ def get_radiomics_features_from_folder(im_dir: Path,
         res = []
         for zz in z:
             res.append(get_radiomics_features(*zz, id_globber=id_globber, **kwargs))
-    df = pd.concat(res, axis=1)
+
+    df = unify_dataframe_levels(pd.concat(res, axis=1), axis=1)
     new_index = [o.split('_') for o in df.index]
     new_index = pd.MultiIndex.from_tuples(new_index, names=('Pre-processing', 'Feature_Group', 'Feature_Name'))
     df.index = new_index
     return df
+
+
+
 
 class FeatureExtractor(object):
     r"""`FeatureExtractor` is a class for extracting features from image data based on given parameters.
@@ -534,27 +545,35 @@ class FeatureExtractor(object):
         if by_slice is None:
             by_slice = self.by_slice
 
-        # if param_file is not Path and a string, write contents to tempfile
+        # Handle param_file in different formats (Path, string filepath, or raw string content)
         try:
-            if len(param_file) < os.pathconf('/', 'PC_NAME_MAX'):
-                if Path(param_file).is_file():
-                    self.param_file = param_file.open('r').read() # this will read param file to str and store it in
+            if isinstance(param_file, Path):
+                # If it's a Path object, read its content
+                if param_file.is_file():
+                    self.param_file = param_file.read_text()
                 else:
-                    raise FileNotFoundError(f"Cannot open pyrad param file: {param_file}")
-            # saved_state
+                    raise FileNotFoundError(f"Cannot find pyrad param file: {param_file}")
             elif isinstance(param_file, str):
-                # if the param_file is a string, test if its compressed
-                if is_compressed(param_file):
-                    self.param_file = decompress(param_file)
+                # Try to interpret string as a file path first
+                path_obj = Path(param_file)
+                if path_obj.is_file():
+                    self.param_file = path_obj.read_text()
                 else:
-                    self.param_file = param_file
+                    # Not a valid file path, check if it's compressed content or raw YAML
+                    if is_compressed(param_file):
+                        self.param_file = decompress(param_file)
+                    else:
+                        self.param_file = param_file  # Use as raw string
             elif param_file is None:
-                raise FileNotFoundError(f"Cannot open pyrad param file: {param_file}")
-        except OSError: # Prevent returning file name too long error
-            pass
+                raise ValueError("Parameter file is required but was None")
+            else:
+                raise TypeError(f"param_file must be a string or Path object, got {type(param_file)}")
+        except OSError as e:
+            # Properly handle OS errors including "filename too long"
+            raise OSError(f"Error accessing parameter file: {str(e)}")
 
         with tempfile.NamedTemporaryFile('w', suffix='.yml') as tmp_param_file:
-            tmp_param_file.write(self.param_file)
+            tmp_param_file.write(str(self.param_file))
             tmp_param_file.flush()
             if stream_output:
                 # make sure writer is read

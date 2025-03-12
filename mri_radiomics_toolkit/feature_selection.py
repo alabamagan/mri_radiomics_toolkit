@@ -346,8 +346,13 @@ def filter_features_by_ANOVA(features: pd.DataFrame,
     for rows in zip(*[f.iterrows() for f in frames]):
         _feat_name = rows[0][0]
         _feats = [r[1] for r in rows]
-        f_statistic, p_value = f_oneway(*_feats)
-        anova_res.append(pd.Series([f_statistic, p_value], index=["F", "pval"], name=_feat_name))
+        try:
+            f_statistic, p_value = f_oneway(*_feats)
+            anova_res.append(pd.Series([f_statistic, p_value], index=["F", "pval"], name=_feat_name))
+        except Exception as e:
+            logger.error(f"Error when calculating ANOVA for {_feat_name}")
+            logger.exception(e)
+            raise e
     anova_res = pd.concat(anova_res, axis=1).T
     logger.debug(f"ANOVA results: \n{anova_res.to_string()}")
     p_values = anova_res['pval']

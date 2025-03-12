@@ -5,7 +5,7 @@ import os
 import time
 import numpy as np
 import pandas as pd
-from typing import Optional, Union, Any, Iterable
+from typing import Optional, Union, Any, Iterable, List
 from multiprocessing import Queue, Manager, Process
 from pathlib import Path
 
@@ -281,3 +281,116 @@ class ExcelWriterProcess:
                         logger.error(f"An error occurred: {e}")
                     else:
                         print(f"An error occurred: {e}")
+
+
+def unify_dataframe_levels(df: pd.DataFrame,
+                           axis: int =1,
+                           level_names: Optional[Union[List[str], str]] = None,
+                           placeholder: str = 'Unknown') -> pd.DataFrame:
+    """
+    Unify the levels of a DataFrame's columns or index to ensure consistency.
+
+    This function adjusts the levels of a DataFrame's columns or index to have a consistent
+    number of levels. If the levels are tuples with varying lengths, the shorter tuples
+    are padded with empty strings (`''`) to match the maximum number of levels. Optionally,
+    custom level names can be provided.
+
+    Args:
+        df (pandas.DataFrame):
+            The input DataFrame, which may have mixed levels in its columns or index.
+        axis (int, optional):
+            The axis to unify. Use `1` for columns (default) or `0` for the index.
+        level_names (list of str, optional):
+            Names for the levels in the MultiIndex. If not provided, default names
+            such as `Level_0`, `Level_1`, etc., will be used.
+
+    Returns:
+        pandas.DataFrame:
+            A new DataFrame with unified levels in the specified axis (columns or index).
+
+    Examples:
+        >>> import pandas as pd
+        >>> df = pd.DataFrame(
+        ...     [[1, 2], [3, 4]],
+        ...     columns=[("A", "X"), "B"]
+        ... )
+        >>> unify_dataframe_levels(df)
+           A        B
+           X
+           1  2
+        >>> unify_dataframe_levels(df, level_names=["First", "Second"]).columns
+        MultiIndex([('A', 'X'),
+                    ('B', '')],
+                   names=['First', 'Second'])
+    """
+    if axis == 1:  # Columns
+        # Get the columns
+        items = df.columns.tolist()
+
+        # Determine the maximum number of levels
+        max_levels = 1
+        for item in items:
+            if isinstance(item, tuple):
+                max_levels = max(max_levels, len(item))
+
+        # If all items are strings (single level) and no level_names specified, return as is
+        if max_levels == 1 and level_names is None:
+            return df
+
+        # Create new tuples with consistent levels
+        new_items = []
+        for item in items:
+            if isinstance(item, tuple):
+                # If tuple has fewer levels than max_levels, pad with empty strings
+                if len(item) < max_levels:
+                    new_items.append(item + (placeholder,) * (max_levels - len(item)))
+                else:
+                    new_items.append(item)
+            else:
+                # Single level - convert to tuple with empty strings for additional levels
+                new_items.append((item,) + (placeholder,) * (max_levels - 1))
+
+        # Set level names if provided
+        if level_names is None:
+            level_names = [f'Level_{i}' for i in range(max_levels)]
+
+        # Create a new DataFrame with the unified columns
+        result_df = df.copy()
+        result_df.columns = pd.MultiIndex.from_tuples(new_items, names=level_names)
+
+    else:  # Index (axis=0)
+        # Get the index
+        items = df.index.tolist()
+
+        # Determine the maximum number of levels
+        max_levels = 1
+        for item in items:
+            if isinstance(item, tuple):
+                max_levels = max(max_levels, len(item))
+
+        # If all items are strings (single level) and no level_names specified, return as is
+        if max_levels == 1 and level_names is None:
+            return df
+
+        # Create new tuples with consistent levels
+        new_items = []
+        for item in items:
+            if isinstance(item, tuple):
+                # If tuple has fewer levels than max_levels, pad with empty strings
+                if len(item) < max_levels:
+                    new_items.append(item + ('',) * (max_levels - len(item)))
+                else:
+                    new_items.append(item)
+            else:
+                # Single level - convert to tuple with empty strings for additional levels
+                new_items.append((item,) + ('',) * (max_levels - 1))
+
+        # Set level names if provided
+        if level_names is None:
+            level_names = [f'Level_{i}' for i in range(max_levels)]
+
+        # Create a new DataFrame with the unified index
+        result_df = df.copy()
+        result_df.index = pd.MultiIndex.from_tuples(new_items, names=level_names)
+
+    return result_df
