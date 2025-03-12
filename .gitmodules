@@ -4,3 +4,6 @@
 [submodule "ThirdParty/mnts"]
 	path = ThirdParty/mnts
 	url = git@github.com:alabamagan/mri_normalization_tools.git
+[submodule "ThirdParty/inmoose"]
+	path = ThirdParty/inmoose
+	url = https://github.com/epigenelabs/inmoose
