@@ -1,0 +1,8 @@
+cd ..
+#python feature_extractor.py -i ./NPC_Radiomics/10.Pre-processed-v2/01.NyulNormalized/ -s ./NPC_Radiomics/0B.Segmentation/01.First/ -p ./pyradiomics_setting.yml -g "^(NPC|P|RHO|T1rhoNPC){0,1}[0-9]{3,5}" -o ./pyrad_features_1st_nyul.xlsx -v
+#python feature_extractor.py -i ./NPC_Radiomics/10.Pre-processed-v2/01.NyulNormalized/ -s ./NPC_Radiomics/0B.Segmentation/02.Second/ -p ./pyradiomics_setting.yml -g "^(NPC|P|RHO|T1rhoNPC){0,1}[0-9]{3,5}" -o ./pyrad_features_2nd_nyul.xlsx -v
+#python feature_extractor.py -i ./NPC_Radiomics/10.Pre-processed-v2/04.NyulNormBinned/ -s ./NPC_Radiomics/0B.Segmentation/01.First/ -p ./pyradiomics_setting.yml -g "^(NPC|P|RHO|T1rhoNPC){0,1}[0-9]{3,5}" -o ./extracted_features_1st.xlsx -v
+#python feature_extractor.py -i ./NPC_Radiomics/10.Pre-processed-v2/04.NyulNormBinned/ -s ./NPC_Radiomics/0B.Segmentation/02.Second/ -p ./pyradiomics_setting.yml -g "^(NPC|P|RHO|T1rhoNPC){0,1}[0-9]{3,5}" -o ./extracted_features_2nd.xlsx -v
+
+python scripts/run_pyradiomics.py -i ./NPC_Radiomics/10.Pre-processed-v2/01.NyulNormalized/ -s ./NPC_Radiomics/0B.Segmentation/01.First/ -p ./pyradiomics_setting/pyradiomics_setting-v3.yml -g "^(NPC|P|RHO|T1rhoNPC){0,1}[0-9]{3,5}" -o NPC_Radiomics/10.Pre-processed_v2/v3-pyrad_features_1st_nyul.xlsx -v
+python scripts/run_pyradiomics.py -i ./NPC_Radiomics/10.Pre-processed-v2/01.NyulNormalized/ -s ./NPC_Radiomics/0B.Segmentation/02.Second/ -p ./pyradiomics_setting/pyradiomics_setting-v3.yml -g "^(NPC|P|RHO|T1rhoNPC){0,1}[0-9]{3,5}" -o NPC_Radiomics/10.Pre-processed_v2/v3-pyrad_features_2nd_nyul.xlsx -v

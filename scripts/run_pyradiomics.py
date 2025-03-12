@@ -57,6 +57,8 @@ def main():
                          help="Stream output to an excel file.")
     parser.add_argument('-v' '--verbose', action='store_true',
                         help='Verbosity option.')
+    parser.add_argument('-n', '--num-workers', action='store', type=int, default=8,
+                        help="Specify if multi-thread is used. Very slow if single thread. Default to 8.")
     parser.add_argument('--id-list', action='store', default=None,
                         help='If specificied pass this to feature extractor.')
     parser.add_argument('--keep-log', action='store_true',
@@ -64,23 +66,6 @@ def main():
     parser.add_argument('--debug', action='store_true',
                         help="Enable debug mode.")
     args = parser.parse_args()
-
-    try:
-        img_path, seg_path, param_file = [Path(getattr(args, p)).resolve()
-                                          for p in ['img_dir', 'seg_dir', 'param_file']]
-        for p in [img_path, seg_path]:
-            if not p.is_dir():
-                raise IOError(f"Cannot open file: {str(p.resolve())}")
-        if not param_file.resolve().is_file():
-            raise IOError(f"Cannot open param file: {str(param_file.resolve())}")
-
-        NORM_FLAG = args.with_norm is not None
-        if NORM_FLAG:
-            norm_file_path = Path(args.with_norm)
-            assert norm_file_path.is_dir(), f"Norm path specified but cannot be openned: {args.with_norm}"
-    except Exception as e:
-        parser.print_usage()
-        raise AttributeError("Error during argument check")
 
     # Prepare logger config
     i = 0
@@ -93,10 +78,36 @@ def main():
 
     with MNTSLogger(log_dir=str(log_file.with_suffix('.log')), log_level='debug',
                     logger_name='pyradiomics', verbose=True, keep_file=args.keep_log) as logger:
-        # Take over radiomics logger
-        rad_logger = radiomics.logger
-        radiomics.setVerbosity(10 if args.debug else 40) # DEBUG
-        take_over_logger(rad_logger)
+
+        try:
+            # Resolve paths for the image directory, segmentation directory, and parameter file
+            img_path, seg_path, param_file = [Path(getattr(args, p)).resolve()
+                                              for p in ['img_dir', 'seg_dir', 'param_file']]
+            # Ensure that both the image and segmentation paths are valid directories
+            for p in [img_path, seg_path]:
+                if not p.is_dir():
+                    raise IOError(f"Cannot open file: {str(p.resolve())}")
+
+            # Ensure that the parameter file exists and is a valid file
+            if not param_file.resolve().is_file():
+                raise IOError(f"Cannot open param file: {str(param_file.resolve())}")
+
+            # Check if normalization is enabled by verifying if a normalization directory is provided
+            NORM_FLAG = args.with_norm is not None
+            if NORM_FLAG:
+                # Resolve the normalization directory path and validate it as a directory
+                norm_file_path = Path(args.with_norm)
+                assert norm_file_path.is_dir(), f"Norm path specified but cannot be opened: {args.with_norm}"
+        except Exception as e:
+            # Print the usage information of the parser in case of an argument error
+            logger.exception(e)
+            # Raise an AttributeError to indicate an issue with argument validation
+            raise AttributeError("Error during argument check")
+
+            # Take over radiomics logger
+            rad_logger = radiomics.logger
+            radiomics.setVerbosity(10 if args.debug else 40) # DEBUG
+            take_over_logger(rad_logger)
 
         if str(args.id_list).count(os.sep):
             idlist_file = Path(args.id_list)
@@ -167,9 +178,11 @@ def main():
             stream_writer.start()
 
         if NORM_FLAG:
-            df = fe.extract_features_with_norm(img_path, seg_path, param_file=param_file, norm_state_file=norm_file_path)
+            df = fe.extract_features_with_norm(img_path, seg_path, param_file=param_file,
+                                               norm_state_file=norm_file_path, num_workers=args.num_workers)
         else:
-            df = fe.extract_features(img_path, seg_path, param_file=param_file, stream_output=args.stream)
+            df = fe.extract_features(img_path, seg_path, param_file=param_file, stream_output=args.stream,
+                                     num_workers=args.num_workers)
 
         if args.stream:
             # Elegantly close writer
