@@ -102,8 +102,8 @@ class Test_feature_extractor(unittest.TestCase):
                 '65237tzltdZHffPugTFr2c0bfiq03exHRSHWilz3tidgApXW+doSmq0WMq2ayjIcehadI1XUFKOFykjMV' \
                 'rRHuTGQ1sIpz/+1Tva0qsuATMgwJNPu9AeiUQAbTAIAAA=='
             extractor.param_file = compressed_param_file
-            extractor.save(Path(tempdir) / 'unit_test')
-            extractor.load(Path(tempdir) / 'unit_test.fe')
+            extractor.save(Path(tempdir) / 'unit_test_fe.tar.gz')
+            extractor.load(Path(tempdir) / 'unit_test_fe.tar.gz')
             self.assertEqual(extractor.param_file,
                              decompress(compressed_param_file))
 
@@ -154,3 +154,103 @@ class Test_feature_extractor(unittest.TestCase):
             writer.stop()
             saved_df = pd.read_excel(temp_excelfile, index_col=[0, 1, 2], engine='openpyxl')
             df.equals(saved_df)
+
+    def test_save_load_state(self):
+        """Test saving and loading state with new mechanism"""
+        with tempfile.TemporaryDirectory() as tempdir:
+            # Create a test extractor
+            extractor = FeatureExtractor()
+            extractor.param_file = self.settings_1
+            extractor.id_globber = "MRI_\d+"
+            
+            # Save state
+            save_dir = Path(tempdir) / 'test_state.tar.gz'
+            extractor.save(save_dir)
+            
+            # Create a new extractor and load state
+            new_extractor = FeatureExtractor()
+            new_extractor.load(save_dir)
+            
+            # Check if states match
+            self.assertEqual(extractor.param_file, new_extractor.param_file)
+            self.assertEqual(extractor.id_globber, new_extractor.id_globber)
+            self.assertEqual(extractor.saved_state['norm_state_file'], 
+                           new_extractor.saved_state['norm_state_file'])
+    
+    def test_save_load_state_with_norm(self):
+        """Test saving and loading state with normalization settings"""
+        with tempfile.TemporaryDirectory() as tempdir:
+            # Create a test extractor with norm settings
+            extractor = FeatureExtractor()
+            extractor.param_file = self.settings_1
+            extractor.id_globber = "MRI_\d+"
+            
+            # Set up some norm settings
+            norm_yaml = """
+            SpatialNorm:
+                out_spacing: [0.45, 0.45, 0]
+            """
+            extractor.load_norm_graph(norm_yaml)
+            
+            # Save state
+            save_dir = Path(tempdir) / 'test_state.tar.gz'
+            extractor.save(save_dir)
+            
+            # Create a new extractor and load state
+            new_extractor = FeatureExtractor()
+            new_extractor.load(save_dir)
+            
+            # Check if states match
+            self.assertEqual(extractor.param_file, new_extractor.param_file)
+            self.assertEqual(extractor.id_globber, new_extractor.id_globber)
+            self.assertEqual(extractor.saved_state['norm_graph'], 
+                           new_extractor.saved_state['norm_graph'])
+    
+    def test_save_load_state_with_features(self):
+        """Test saving and loading state with extracted features"""
+        with tempfile.TemporaryDirectory() as tempdir:
+            # Create a test extractor and extract features
+            extractor = FeatureExtractor()
+            extractor.param_file = self.settings_1
+            extractor.id_globber = "MRI_\d+"
+            
+            # Extract some features
+            features = extractor.extract_features(self.sample_img_1, self.sample_seg_1)
+            
+            # Save state
+            save_dir = Path(tempdir) / 'test_state.tar.gz'
+            extractor.save(save_dir)
+            
+            # Create a new extractor and load state
+            new_extractor = FeatureExtractor()
+            new_extractor.load(save_dir)
+            
+            # Check if states match
+            self.assertEqual(extractor.param_file, new_extractor.param_file)
+            self.assertEqual(extractor.id_globber, new_extractor.id_globber)
+            pd.testing.assert_frame_equal(extractor.extracted_features,
+                                          new_extractor.extracted_features)
+    
+    def test_save_load_state_with_none_values(self):
+        """Test saving and loading state with None values"""
+        with tempfile.TemporaryDirectory() as tempdir:
+            # Create a test extractor with some None values
+            extractor = FeatureExtractor()
+            extractor.param_file = self.settings_1
+            extractor.id_globber = "MRI_\d+"
+            extractor.saved_state['norm_state_file'] = None
+            extractor.saved_state['norm_graph'] = None
+            
+            # Save state
+            save_dir = Path(tempdir) / 'test_state.tar.gz'
+            extractor.save(save_dir)
+            
+            # Create a new extractor and load state
+            new_extractor = FeatureExtractor()
+            new_extractor.load(save_dir)
+            
+            # Check if states match
+            self.assertEqual(extractor.param_file, new_extractor.param_file)
+            self.assertEqual(extractor.id_globber, new_extractor.id_globber)
+            self.assertIsNone(new_extractor.saved_state['norm_state_file'])
+            self.assertIsNone(new_extractor.saved_state['norm_graph'])

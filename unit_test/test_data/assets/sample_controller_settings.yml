@@ -1,5 +1,5 @@
 Extractor:
-  id_globber: "^[0-9A-Z]+"
+  id_globber: "^[0-9A-Z]+_[0-9]+"
   pyrad_param_file: "./test_data/assets/sample_pyrad_settings.yml"
 
 Selector:

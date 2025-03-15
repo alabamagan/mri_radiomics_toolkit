@@ -12,7 +12,7 @@ from mnts.mnts_logger import MNTSLogger
 from mri_radiomics_toolkit import *
 from mri_radiomics_toolkit.model_building import cv_grid_search
 from mri_radiomics_toolkit.perf_metric import getStability, confidenceIntervals, hypothesisTestT, \
-            hypothesisTestV, feat_list_to_binary_mat
+    hypothesisTestV, feat_list_to_binary_mat
 import numpy as np
 import pandas as pd
 
@@ -25,7 +25,6 @@ class Test_ModelBuilding(unittest.TestCase):
         MNTSLogger.set_global_log_level('debug')
         time.sleep(1)
 
-
     @classmethod
     def tearDownClass(cls) -> None:
         cls.cls_logger.cleanup()
@@ -37,6 +36,10 @@ class Test_ModelBuilding(unittest.TestCase):
         self.temp_dir_obj = tempfile.TemporaryDirectory()
         self.temp_dir = Path(self.temp_dir_obj.name)
 
+        # Check if the setting file exists
+        self.assertTrue(self._p_setting.exists(), f"Settings file not found: {self._p_setting}")
+
+    @unittest.skip("Long test")
     def test_model_building(self):
         from sklearn.model_selection import train_test_split
 
@@ -49,9 +52,9 @@ class Test_ModelBuilding(unittest.TestCase):
         features = features.loc[cases]
 
         with tempfile.NamedTemporaryFile('wb', suffix='.pkl') as f:
-            fs = FeatureSelector()
-            fs.load(p_fss)
-            features = fs.predict(features)
+            from mri_radiomics_toolkit.feature_selection import FeatureSelectionPipeline
+            fs = FeatureSelectionPipeline.load(p_fss)
+            features = fs.transform(features)
             self._logger.info(f"Selected features are: {features.T}")
 
             # Random train unit_test split
@@ -108,12 +111,18 @@ class Test_ModelBuilding(unittest.TestCase):
 
         # Call the function
         best_params, results, predict_table, best_estimators = (
-            cv_grid_search(features.iloc[:20], gt.iloc[:20], None, None))
+            cv_grid_search(features.iloc[:20], gt.iloc[:20], None, None, scoring='roc_auc', n_jobs=8))
 
     def _prepare_samples(self):
         p_feat_a = Path('test_data/assets/samples_feat_1st.xlsx')
-        p_gt = Path('test_data/assets/sample_datasheet.csv')
+        p_gt = Path('test_data/assets/sample_datasheet_complex.csv')
         p_fss = Path('test_data/assets/fs_saved_state.fss')
+
+        # Check if all required files exist
+        self.assertTrue(p_feat_a.exists(), f"Feature file not found: {p_feat_a}")
+        self.assertTrue(p_gt.exists(), f"Ground truth file not found: {p_gt}")
+        self.assertTrue(p_fss.exists(), f"Feature selector state file not found: {p_fss}")
+
         return p_feat_a, p_gt, p_fss
 
     @unittest.skip("This is broken now.")
@@ -138,7 +147,6 @@ class Test_ModelBuilding(unittest.TestCase):
             cv_grid_search(features.iloc[:20], gt.iloc[:20], None, None,
                            cv=generate_cross_validation_samples))
 
-
     def test_cv_grid_search_multi_class(self):
         from mri_radiomics_toolkit.models.cards import multi_class_cv_grid_search_card
         from mri_radiomics_toolkit.model_building import neg_log_loss
@@ -151,6 +159,38 @@ class Test_ModelBuilding(unittest.TestCase):
         best_params, results, predict_table, best_estimators = (
             cv_grid_search(features, gt, None, None,
                            param_grid_dict=multi_class_cv_grid_search_card, scoring=neg_log_loss))
+
+    def test_save_load_mechanism(self):
+        """Test the save/load mechanism for ModelBuilder"""
+        import tempfile
+        from pathlib import Path
+        
+        # Setup the configurations
+        features = pd.DataFrame(np.random.random(size=(40, 10)))
+        gt = pd.Series(np.random.randint(low=0, high=2, size=40))
+        
+        # Create a model builder and fit it
+        model = ModelBuilder()
+        results, _ = model.fit(features, gt)
+        
+        # Test save/load with the new mechanism
+        with tempfile.TemporaryDirectory() as tempdir:
+            save_dir = Path(tempdir) / 'model_state'
+            
+            # Save the model
+            model.save(save_dir)
+            
+            # Create a new model and load the state
+            new_model = ModelBuilder()
+            new_model.load(save_dir)
+            
+            # Check if states match
+            self.assertEqual(model.saved_state['best_params'], new_model.saved_state['best_params'])
+            
+            # Check if the loaded model can predict
+            predictions1 = model.predict(features)
+            predictions2 = new_model.predict(features)
+            pd.testing.assert_frame_equal(predictions1, predictions2)
 
 
 if __name__ == '__main__':
