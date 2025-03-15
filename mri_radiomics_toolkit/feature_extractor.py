@@ -23,7 +23,7 @@ from mnts.mnts_logger import MNTSLogger
 from mnts.scripts.normalization import run_graph_inference
 from mnts.utils import get_unique_IDs, load_supervised_pair_by_IDs, repeat_zip
 from radiomics import featureextractor
-from .utils import zipdir, compress, decompress, is_compressed, ExcelWriterProcess, unify_dataframe_levels
+from .utils import zipdir, compress, decompress, is_compressed, ExcelWriterProcess, unify_dataframe_levels, StateManager
 
 
 # Fix logger
@@ -418,16 +418,68 @@ class FeatureExtractor(object):
     def __init__(self, *, id_globber = "^[0-9a-zA-Z]+", idlist = None, param_file = None, **kwargs):
         super(FeatureExtractor, self).__init__()
         self.saved_state = {
-            'param_file': None, # Path to param file
-            'norm_state_file': FeatureExtractor.DEFAULT_NORM_STATE,    # Override in `extract_features_with_norm` if specified
+            # Existing saved_state items
+            'param_file': None,
+            'norm_state_file': None,
             'norm_graph': None,
+            'idlist': None,
+            'id_globber': None,
+            'by_slice': -1,  # Default value -1 matches the default in extract_features method
+            'extracted_features': None
         }
-        self.idlist = idlist
-        self.param_file = param_file
-        self.id_globber = id_globber
-        self.by_slice = -1
-        self._extracted_features = None
-        self._logger = MNTSLogger[__class__.__name__]
+        self.param_file  = param_file # This converts file to plain text.
+
+        # Update saved_state dictionary with provided kwargs
+        self.saved_state.update(kwargs)
+
+        # Initialize other attributes
+        self._logger = MNTSLogger[self.__class__.__name__]
+
+    @property
+    def extracted_features(self):
+        """Get the extracted features DataFrame."""
+        return self.saved_state['extracted_features']
+
+    @extracted_features.setter
+    def extracted_features(self, value: pd.DataFrame):
+        """Set the DataFrame containing the extracted features."""
+        if not isinstance(value, pd.DataFrame):
+            raise ValueError("extracted_features must be a pandas DataFrame.")
+        self.saved_state['extracted_features'] = value
+
+    @property
+    def idlist(self):
+        """Get the ID list used for feature extraction."""
+        return self.saved_state['idlist']
+
+    @idlist.setter
+    def idlist(self, value):
+        """Set the ID list used for feature extraction."""
+        self.saved_state['idlist'] = value
+
+    @property
+    def id_globber(self):
+        """Get the ID globber used for matching files."""
+        return self.saved_state['id_globber']
+
+    @id_globber.setter
+    def id_globber(self, value):
+        """Set the ID globber used for matching files."""
+        self.saved_state['id_globber'] = value
+
+    @property
+    def by_slice(self):
+        """Get the slicing setting for feature extraction.
+
+        Default value is -1, which means no slicing.
+        Values 0, 1, or 2 indicate slicing along the corresponding axis.
+        """
+        return self.saved_state['by_slice']
+
+    @by_slice.setter
+    def by_slice(self, value):
+        """Set the slicing setting for feature extraction."""
+        self.saved_state['by_slice'] = value
 
 
     @property
@@ -446,37 +498,69 @@ class FeatureExtractor(object):
             self.saved_state['param_file'] = v
 
     def load(self, f: Path):
-        r"""Load att `self.save_state`. The file saved should be a dictionary containing key 'selected_features', which
-        points to a list of features in the format of pd.MultiIndex or tuple
+        r"""
+        Load the state of the feature extractor from a file.
 
+        This method loads the saved state of the feature extractor from the specified path.
+        The state should have been previously saved using the `save` method.
+        
         Args:
-            f (pathlib.Path): The path to the file from which the state should be loaded.
-
+            f (Path): The path to load the state from. Can be a file or directory.
+            
         Raises:
-            AssertionError: If the file does not exist.
+            AssertionError: If the specified path does not exist.
             TypeError: If the loaded state is not a dictionary.
+            FileNotFoundError: If required state files are missing.
         """
-        assert Path(f).is_file(), f"Cannot open file {f}"
-        d = joblib.load(f)
-        if not isinstance(d, dict):
-            raise TypeError("State loaded is incorrect!")
-        self.saved_state.update(d)
+        assert Path(f).is_file() or Path(f).is_dir(), f"Cannot open file {f}"
+
+        try:
+            # Load using StateManager
+            loaded_state = StateManager.load_state(f)
+            
+            if not isinstance(loaded_state, dict):
+                raise TypeError("State loaded is incorrect!")
+            
+            # Update saved_state with loaded state
+            self.saved_state.update(loaded_state)
+            
+            # Handle compressed param_file if present
+            if 'param_file' in self.saved_state and self.saved_state['param_file'] is not None:
+                if is_compressed(self.saved_state['param_file']):
+                    try:
+                        # Keep it compressed in saved_state, but verify it can be decompressed
+                        decompress(self.saved_state['param_file'])
+                    except Exception as e:
+                        self._logger.warning(f"Error decompressing param_file: {str(e)}")
+            
+            # Recreate logger
+            self._logger = MNTSLogger[self.__class__.__name__]
+            
+        except FileNotFoundError as e:
+            self._logger.error(f"Failed to load state: {str(e)}")
+            raise
+        except Exception as e:
+            self._logger.error(f"Unexpected error loading state: {str(e)}")
+            raise
 
     def save(self, f: Path):
-        r"""Save the current state to a file.
+        r"""
+        Save the state of the feature extractor to a file.
 
         Args:
-            f (pathlib.Path): The path to the file where the state should be saved.
+            f (Path): The path to save the state to. If f is a directory, the state will be saved to f/state.tar.gz.
+                      If f is a file, the state will be saved to that file.
         """
         if any([v is None for v in self.saved_state.values()]):
-            self._logger.warning("Some saved state components are None.")
-        if f.is_dir(): # default name
-            f = f.joinpath('saved_state.fe')
-        # Always save the compressed version of the param file.
-        if not is_compressed(self.saved_state['param_file']):
-            self.saved_state['param_file'] = compress(self.param_file)
-        joblib.dump(self.saved_state, filename=f.with_suffix('.fe'))
-
+            self._logger.warning("Some values in saved_state are None.")
+        
+        # Create a temporary state dict without logger
+        state_to_save = self.saved_state.copy()
+        if '_logger' in state_to_save:
+            state_to_save.pop('_logger')
+        
+        # Save using StateManager
+        StateManager.save_state(state_to_save, f)
 
     def save_features(self, outpath: Path):
         """Save the extracted features to an Excel or CSV file.
@@ -494,9 +578,9 @@ class FeatureExtractor(object):
             outpath = outpath.with_suffix('.xlsx')
 
         if outpath.suffix == '.xlsx' or outpath.suffix is None:
-            self._extracted_features.to_excel(str(outpath.with_suffix('.xlsx').resolve()))
+            self.extracted_features.to_excel(str(outpath.with_suffix('.xlsx').resolve()))
         elif outpath.suffix == '.csv':
-            self._extracted_features.to_csv(str(outpath.resolve()))
+            self.extracted_features.to_csv(str(outpath.resolve()))
 
     def extract_features(self,
                          im_path: Path,
@@ -555,10 +639,14 @@ class FeatureExtractor(object):
                     raise FileNotFoundError(f"Cannot find pyrad param file: {param_file}")
             elif isinstance(param_file, str):
                 # Try to interpret string as a file path first
-                path_obj = Path(param_file)
-                if path_obj.is_file():
-                    self.param_file = path_obj.read_text()
-                else:
+                try:
+                    path_obj = Path(param_file)
+                    if len(param_file) < os.pathconf('/', 'PC_PATH_MAX'):
+                        if path_obj.is_file():
+                            self.param_file = path_obj.read_text()
+                        else:
+                            raise FileNotFoundError(str(path_obj))
+                except OSError:
                     # Not a valid file path, check if it's compressed content or raw YAML
                     if is_compressed(param_file):
                         self.param_file = decompress(param_file)
@@ -580,16 +668,25 @@ class FeatureExtractor(object):
                 if ExcelWriterProcess._instance is None:
                     raise ArithmeticError("Stream output is ON but writer was not prepared")
 
-            df = get_radiomics_features_from_folder(im_path, seg_path, Path(tmp_param_file.name), *args,
-                                                    id_globber=self.id_globber,
-                                                    idlist=idlist,
-                                                    by_slice=by_slice,
-                                                    writer_func=ExcelWriterProcess.write if stream_output else None,
-                                                    connected_components=connected_components,
-                                                    num_worker=num_workers)
+            if im_path.is_file() and seg_path.is_file():
+                # If input is a pair of image and seg only
+                df = get_radiomics_features(im_path, seg_path, Path(tmp_param_file.name),
+                                            id_globber=self.id_globber, by_slice=by_slice,
+                                            writer_func=ExcelWriterProcess.write if stream_output else None,
+                                            connected_components=connected_components)
+            elif im_path.is_dir() and seg_path.is_dir():
+                df = get_radiomics_features_from_folder(im_path, seg_path, Path(tmp_param_file.name), *args,
+                                                        id_globber=self.id_globber,
+                                                        idlist=idlist,
+                                                        by_slice=by_slice,
+                                                        writer_func=ExcelWriterProcess.write if stream_output else None,
+                                                        connected_components=connected_components,
+                                                        num_worker=num_workers)
+            else:
+                raise FileNotFoundError("Either image or segment path is not found or incorrect.")
 
-        self._extracted_features = df.T
-        return self._extracted_features
+        self.extracted_features = df.T
+        return self.extracted_features
 
     def extract_features_with_norm(self,
                                    im_path: Path,

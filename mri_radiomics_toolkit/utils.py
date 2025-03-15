@@ -8,6 +8,9 @@ import pandas as pd
 from typing import Optional, Union, Any, Iterable, List
 from multiprocessing import Queue, Manager, Process
 from pathlib import Path
+import json
+import pickle
+import warnings
 
 import sklearn.linear_model
 from mnts.mnts_logger import MNTSLogger
@@ -394,3 +397,294 @@ def unify_dataframe_levels(df: pd.DataFrame,
         result_df.index = pd.MultiIndex.from_tuples(new_items, names=level_names)
 
     return result_df
+
+
+class StateManager:
+    """A utility class for managing state saving and loading in a more robust way.
+    
+    This class provides methods to save and load states of objects that may contain
+    non-serializable components. It handles different types of data appropriately:
+    - Basic Python types are saved as JSON
+    - Numpy arrays are saved using numpy.save
+    - Complex Python objects are saved using pickle (if serializable)
+    
+    States are saved to a single compressed tarball (.tar.gz) file, which contains:
+    - state.json: Basic Python types
+    - *.npy: NumPy arrays
+    - *.parquet: Pandas DataFrames/Series
+    - *.pkl: Pickled complex objects
+    - Subdirectories for nested dictionaries
+    """
+    
+    @staticmethod
+    def save_state(state_dict: dict, save_path: Path):
+        """Save a state dictionary to a compressed tarball.
+        
+        Args:
+            state_dict: Dictionary containing the state to save
+            save_path: Path to save the state to. If it's a directory, 
+                      a file named 'state.tar.gz' will be created in it.
+                      If the path doesn't end with .tar.gz, it will be 
+                      appended automatically.
+        """
+        import tarfile
+        import tempfile
+        import os
+        
+        save_path = Path(save_path)
+        
+        # If save_path is a directory, create a file named 'state.tar.gz' in it
+        if save_path.is_dir():
+            save_path = save_path / 'state.tar.gz'
+        # Ensure the file has .tar.gz suffix
+        elif not str(save_path).endswith('.tar.gz'):
+            save_path = save_path.with_suffix('.tar.gz')
+        
+        # Ensure the parent directory exists
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Create a temporary directory to store files before compression
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir_path = Path(temp_dir)
+            
+            # Save basic types as JSON
+            json_state = {}
+            for key, value in state_dict.items():
+                # Skip logger objects
+                if key == '_logger' or (isinstance(value, dict) and '_logger' in value):
+                    continue
+                    
+                if isinstance(value, (str, int, float, bool, type(None))):
+                    json_state[key] = value
+                elif isinstance(value, (list, tuple)):
+                    # Check if all elements are basic types
+                    if all(isinstance(item, (str, int, float, bool, type(None))) for item in value):
+                        json_state[key] = list(value)  # Convert tuple to list for JSON
+                    else:
+                        # Try to pickle complex lists/tuples
+                        try:
+                            with open(temp_dir_path / f"{key}.pkl", 'wb') as f:
+                                pickle.dump(value, f, protocol=pickle.HIGHEST_PROTOCOL)
+                        except Exception as e:
+                            warnings.warn(f"Could not pickle {key}: {str(e)}")
+                elif isinstance(value, dict):
+                    # Recursively save nested dictionaries
+                    nested_dir = temp_dir_path / key
+                    nested_dir.mkdir(exist_ok=True)
+                    try:
+                        StateManager._save_nested_dict(value, nested_dir)
+                    except Exception as e:
+                        warnings.warn(f"Could not save nested dictionary {key}: {str(e)}")
+                elif isinstance(value, np.ndarray):
+                    # Save numpy arrays separately
+                    np.save(temp_dir_path / f"{key}.npy", value)
+                elif isinstance(value, pd.DataFrame) or isinstance(value, pd.Series):
+                    # Save pandas objects to parquet
+                    try:
+                        if isinstance(value, pd.DataFrame):
+                            value.to_parquet(temp_dir_path / f"{key}.parquet")
+                        else:
+                            value.to_frame().to_parquet(temp_dir_path / f"{key}.parquet")
+                    except Exception as e:
+                        warnings.warn(f"Could not save {key} to parquet: {str(e)}. Trying pickle instead.")
+                        try:
+                            with open(temp_dir_path / f"{key}.pkl", 'wb') as f:
+                                pickle.dump(value, f, protocol=pickle.HIGHEST_PROTOCOL)
+                        except Exception as e:
+                            warnings.warn(f"Could not pickle {key}: {str(e)}. Object will be skipped.")
+                else:
+                    # Try to pickle other objects
+                    try:
+                        with open(temp_dir_path / f"{key}.pkl", 'wb') as f:
+                            pickle.dump(value, f, protocol=pickle.HIGHEST_PROTOCOL)
+                    except Exception as e:
+                        warnings.warn(f"Could not pickle {key}: {str(e)}. Object will be skipped.")
+
+            # Save JSON state
+            with open(temp_dir_path / "state.json", 'w') as f:
+                json.dump(json_state, f, indent=2)
+            
+            # Create a tarball with all the files
+            with tarfile.open(save_path, "w:gz") as tar:
+                # Add all files from the temporary directory to the tarball
+                for file_path in temp_dir_path.glob("**/*"):
+                    if file_path.is_file():
+                        # Get the relative path from temp_dir_path
+                        rel_path = file_path.relative_to(temp_dir_path)
+                        tar.add(file_path, arcname=str(rel_path))
+    
+    @staticmethod
+    def _save_nested_dict(nested_dict: dict, save_dir: Path):
+        """Helper method to save nested dictionaries recursively."""
+        # Save basic types as JSON
+        json_state = {}
+        for key, value in nested_dict.items():
+            # Skip logger objects
+            if key == '_logger':
+                continue
+                
+            if isinstance(value, (str, int, float, bool, type(None))):
+                json_state[key] = value
+            elif isinstance(value, (list, tuple)):
+                # Check if all elements are basic types
+                if all(isinstance(item, (str, int, float, bool, type(None))) for item in value):
+                    json_state[key] = list(value)  # Convert tuple to list for JSON
+                else:
+                    # Try to pickle complex lists/tuples
+                    try:
+                        with open(save_dir / f"{key}.pkl", 'wb') as f:
+                            pickle.dump(value, f, protocol=pickle.HIGHEST_PROTOCOL)
+                    except Exception as e:
+                        warnings.warn(f"Could not pickle {key}: {str(e)}")
+            elif isinstance(value, dict):
+                # Recursively save nested dictionaries
+                nested_dir = save_dir / key
+                nested_dir.mkdir(exist_ok=True)
+                StateManager._save_nested_dict(value, nested_dir)
+            elif isinstance(value, np.ndarray):
+                # Save numpy arrays separately
+                np.save(save_dir / f"{key}.npy", value)
+            elif isinstance(value, pd.DataFrame) or isinstance(value, pd.Series):
+                # Save pandas objects to parquet
+                try:
+                    if isinstance(value, pd.DataFrame):
+                        value.to_parquet(save_dir / f"{key}.parquet")
+                    else:
+                        value.to_frame().to_parquet(save_dir / f"{key}.parquet")
+                except Exception as e:
+                    warnings.warn(f"Could not save {key} to parquet: {str(e)}. Trying pickle instead.")
+                    try:
+                        with open(save_dir / f"{key}.pkl", 'wb') as f:
+                            pickle.dump(value, f, protocol=pickle.HIGHEST_PROTOCOL)
+                    except Exception as e:
+                        warnings.warn(f"Could not pickle {key}: {str(e)}. Object will be skipped.")
+            else:
+                # Try to pickle other objects
+                try:
+                    with open(save_dir / f"{key}.pkl", 'wb') as f:
+                        pickle.dump(value, f, protocol=pickle.HIGHEST_PROTOCOL)
+                except Exception as e:
+                    warnings.warn(f"Could not pickle {key}: {str(e)}. Object will be skipped.")
+        
+        # Save JSON state
+        with open(save_dir / "state.json", 'w') as f:
+            json.dump(json_state, f, indent=2)
+    
+    @staticmethod
+    def load_state(load_path: Path) -> dict:
+        """Load a state dictionary from a compressed tarball or directory.
+        
+        This method loads a previously saved state from the specified path.
+        
+        If the path is a tarball (.tar.gz file), it will be extracted to a temporary directory
+        and the state will be loaded from there.
+        
+        If the path is a directory, it will look for a state.tar.gz file in the directory.
+        If found, it will load from that file. Otherwise, it will try to load directly from
+        the directory structure.
+        
+        Args:
+            load_path: Path to the tarball file or directory
+            
+        Returns:
+            Dictionary containing the loaded state
+            
+        Raises:
+            FileNotFoundError: If the specified file or directory does not exist
+        """
+        import tarfile
+        import tempfile
+        
+        load_path = Path(load_path)
+        
+        # Check if the path exists
+        if not load_path.exists():
+            raise FileNotFoundError(f"Path does not exist: {load_path}")
+        
+        # If load_path is a directory, look for state.tar.gz in it
+        if load_path.is_dir():
+            tar_path = load_path / 'state.tar.gz'
+            if tar_path.exists():
+                load_path = tar_path
+            else:
+                # If state.tar.gz doesn't exist, try to load directly from the directory
+                return StateManager._load_from_directory(load_path)
+        
+        # At this point, load_path should be a file
+        if not load_path.is_file():
+            raise FileNotFoundError(f"Expected a file but found: {load_path}")
+        
+        # Create a temporary directory to extract files
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir_path = Path(temp_dir)
+            
+            # Extract the tarball
+            try:
+                with tarfile.open(load_path, "r:gz") as tar:
+                    tar.extractall(path=temp_dir_path)
+                
+                # Load the state from the extracted files
+                return StateManager._load_from_directory(temp_dir_path)
+            except tarfile.ReadError as e:
+                # If it's not a valid tarball, try to load directly from the path
+                warnings.warn(f"Could not read {load_path} as a tarball: {str(e)}. Trying to load directly.")
+                if load_path.is_dir():
+                    return StateManager._load_from_directory(load_path)
+                else:
+                    raise
+    
+    @staticmethod
+    def _load_from_directory(load_dir: Path) -> dict:
+        """Helper method to load state from a directory."""
+        state = {}
+        state_json_path = load_dir / "state.json"
+        
+        # Load JSON state if it exists
+        if state_json_path.exists():
+            with open(state_json_path, 'r') as f:
+                try:
+                    state = json.load(f)
+                except json.JSONDecodeError as e:
+                    warnings.warn(f"Error decoding state.json: {str(e)}. Continuing with empty state.")
+        else:
+            warnings.warn(f"state.json not found in {load_dir}. Attempting to reconstruct state from other files.")
+            
+        # Load numpy arrays
+        for npy_file in load_dir.glob("*.npy"):
+            key = npy_file.stem
+            try:
+                state[key] = np.load(npy_file, allow_pickle=True)
+            except Exception as e:
+                warnings.warn(f"Could not load numpy array {key}: {str(e)}")
+            
+        # Load pandas objects
+        for parquet_file in load_dir.glob("*.parquet"):
+            key = parquet_file.stem
+            try:
+                df = pd.read_parquet(parquet_file)
+                # Convert back to Series if it's a single column DataFrame with the same name
+                if df.shape[1] == 1 and df.columns[0] == key:
+                    state[key] = df[key]
+                else:
+                    state[key] = df
+            except Exception as e:
+                warnings.warn(f"Could not load parquet file {key}: {str(e)}")
+            
+        # Load pickled objects
+        for pkl_file in load_dir.glob("*.pkl"):
+            key = pkl_file.stem
+            try:
+                with open(pkl_file, 'rb') as f:
+                    state[key] = pickle.load(f)
+            except (pickle.UnpicklingError, ModuleNotFoundError, AttributeError) as e:
+                warnings.warn(f"Could not unpickle {key}: {str(e)}")
+                
+        # Load nested dictionaries
+        for dir_path in [p for p in load_dir.glob("*") if p.is_dir()]:
+            key = dir_path.name
+            try:
+                state[key] = StateManager._load_from_directory(dir_path)
+            except Exception as e:
+                warnings.warn(f"Error loading nested state from {dir_path}: {str(e)}")
+                
+        return state

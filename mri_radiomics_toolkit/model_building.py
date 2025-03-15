@@ -142,9 +142,9 @@ def cv_grid_search(train_features: pd.DataFrame,
             split = splitter.split(train_targets, train_targets.values.ravel())
         else:
             split = cv(train_targets, train_targets.values.ravel())
+
         grid = GridSearchCV(clf, n_jobs=n_jobs, param_grid=param_grid, scoring=scoring,
-                            cv=split, verbose=MNTSLogger.is_verbose, **kwargs
-                            )
+                            cv=split, verbose=MNTSLogger.is_verbose, **kwargs)
 
         try:
             grid.fit(train_features.values, train_targets.values.ravel(), **fit_params)
@@ -269,21 +269,73 @@ class ModelBuilder(object):
 
     def load(self, f: Path):
         r"""
-        Load att `self.save_state`. The file saved should be a dictionary containing key 'selected_features', which
-        points to a list of features in the format of pd.MultiIndex or tuple
+        Load the state of the model builder from a file.
+
+        This method loads the saved state of the model builder from the specified path.
+        The state should have been previously saved using the `save` method.
+        
+        Args:
+            f (Path): The path to load the state from. Can be a file or directory.
+            
+        Raises:
+            AssertionError: If the specified path does not exist.
+            TypeError: If the loaded state is not a dictionary.
+            FileNotFoundError: If required state files are missing.
         """
-        assert Path(f).is_file(), f"Cannot open file {f}"
-        d = joblib.load(f)
-        if not isinstance(d, dict):
-            raise TypeError("State loaded is incorrect!")
-        self.saved_state.update(d)
+        assert Path(f).is_file() or Path(f).is_dir(), f"Cannot open file {f}"
+        
+        try:
+            # Load using StateManager
+            from .utils import StateManager
+            loaded_state = StateManager.load_state(f)
+            
+            if not isinstance(loaded_state, dict):
+                raise TypeError("State loaded is incorrect!")
+            
+            # Update saved_state with loaded state
+            self.saved_state.update(loaded_state)
+            
+            # Special handling for sklearn estimators
+            if 'estimators' in self.saved_state and self.saved_state['estimators'] is not None:
+                # Verify estimators are valid
+                for key, estimator in self.saved_state['estimators'].items():
+                    if estimator is not None:
+                        try:
+                            # Check if the estimator has the predict method
+                            if not hasattr(estimator, 'predict'):
+                                self._logger.warning(f"Estimator {key} does not have predict method")
+                        except Exception as e:
+                            self._logger.warning(f"Error checking estimator {key}: {str(e)}")
+            
+            # Recreate logger
+            self._logger = MNTSLogger[self.__class__.__name__]
+            
+        except FileNotFoundError as e:
+            self._logger.error(f"Failed to load state: {str(e)}")
+            raise
+        except Exception as e:
+            self._logger.error(f"Unexpected error loading state: {str(e)}")
+            raise
 
     def save(self, f: Path):
+        r"""
+        Save the state of the model builder to a file.
+
+        Args:
+            f (Path): The path to save the state to. If f is a directory, the state will be saved to f/state.tar.gz.
+                      If f is a file, the state will be saved to that file.
+        """
         if any([v is None for v in self.saved_state.values()]):
             raise ArithmeticError("There are nothing to save.")
-        joblib.dump(self.saved_state, filename=f.with_suffix('.pkl'))
-
-
+        
+        # Create a temporary state dict without logger
+        state_to_save = self.saved_state.copy()
+        if '_logger' in state_to_save:
+            state_to_save.pop('_logger')
+        
+        # Save using StateManager
+        from .utils import StateManager
+        StateManager.save_state(state_to_save, f)
 
     def cv_fit(self,
                train_features: pd.DataFrame,

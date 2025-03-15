@@ -11,7 +11,18 @@ from mnts.mnts_logger import MNTSLogger
 from mnts.utils import get_unique_IDs
 from typing import Union
 
-from . import FeatureExtractor, FeatureSelector, ModelBuilder
+from . import FeatureExtractor, ModelBuilder
+from .feature_selection import (
+    FeatureSelectionPipeline, 
+    VarianceFilterStep, 
+    ICCFilterStep, 
+    TTestFilterStep, 
+    ANOVAFilterStep, 
+    SupervisedSelectionStep, 
+    NormalizationStep, 
+    BootstrappedSelectionStep,
+    BBRENTStep
+)
 
 __all__ = ['Controller']
 
@@ -70,13 +81,61 @@ class Controller(object):
         super(Controller, self).__init__()
 
         self._receved_params = kwargs
-        self._logger = MNTSLogger[__class__.__name__]
+        self._logger = MNTSLogger[self.__class__.__name__]
         self._with_norm = with_norm
         self._setting = setting
 
+        # Create a default feature selection pipeline
+        feature_selection_pipeline = FeatureSelectionPipeline(name="DefaultFeatureSelectionPipeline")
+        
+        # Add default steps to the pipeline based on common settings
+        if kwargs.get('criteria_threshold') or kwargs.get('n_trials') or kwargs.get('boot_runs'):
+            # Extract parameters for feature selection steps
+            criteria_threshold = kwargs.get('criteria_threshold', (0.9, 0.5, 0.99))
+            n_trials = kwargs.get('n_trials', 500)
+            boot_runs = kwargs.get('boot_runs', 250)
+            boot_ratio = kwargs.get('boot_ratio', (0.8, 1.0))
+            thres_percentage = kwargs.get('thres_percentage', 0.4)
+            boosting = kwargs.get('boosting', True)
+            ICC_form = kwargs.get('ICC_form', 'ICC2k')
+            
+            # Add steps to the pipeline
+            if boot_runs > 1:
+                feature_selection_pipeline.add_step(
+                    BBRENTStep(
+                        criteria_threshold=criteria_threshold,
+                        n_trials=n_trials,
+                        n_bootstrap=boot_runs,
+                        bootstrap_ratio=boot_ratio,
+                        threshold_percentage=thres_percentage,
+                        boosting=boosting
+                    )
+                )
+            else:
+                # Add variance filter
+                feature_selection_pipeline.add_step(VarianceFilterStep())
+                
+                # Add ICC filter if needed
+                feature_selection_pipeline.add_step(ICCFilterStep(ICC_form=ICC_form))
+                
+                # Add statistical filter (T-test or ANOVA)
+                feature_selection_pipeline.add_step(TTestFilterStep())
+                
+                # Add normalization
+                feature_selection_pipeline.add_step(NormalizationStep())
+                
+                # Add supervised selection
+                feature_selection_pipeline.add_step(
+                    SupervisedSelectionStep(
+                        criteria_threshold=criteria_threshold,
+                        n_trials=n_trials,
+                        boosting=boosting
+                    )
+                )
+
         self.saved_state = {
             'extractor': FeatureExtractor(*args, **kwargs),
-            'selector': FeatureSelector(*args, **kwargs),
+            'selector': feature_selection_pipeline,
             'model': ModelBuilder(*args, **kwargs),
             'setting': self._setting,
             'norm_ready': False,
@@ -164,10 +223,60 @@ class Controller(object):
 
         if 'Selector' in settings_loaded.keys():
             _s = settings_loaded['Selector']
-            s = self.selector.saved_state['setting']
-            s.update((k, _s[k]) for k in set(_s).intersection(s))
-            self.selector.saved_state['setting'] = s
-            self._logger.info(f"Updated selector setting: {pprint.pformat(s)}")
+            
+            # Create a new feature selection pipeline based on settings
+            feature_selection_pipeline = FeatureSelectionPipeline(name="ConfiguredFeatureSelectionPipeline")
+            
+            # Extract parameters for feature selection steps
+            criteria_threshold = _s.get('criteria_threshold', (0.9, 0.5, 0.99))
+            n_trials = _s.get('n_trials', 500)
+            boot_runs = _s.get('boot_runs', 250)
+            boot_ratio = _s.get('boot_ratio', (0.8, 1.0))
+            thres_percentage = _s.get('thres_percentage', 0.4)
+            return_freq = _s.get('return_freq', False)
+            boosting = _s.get('boosting', True)
+            ICC_form = _s.get('ICC_form', 'ICC2k')
+            
+            # Configure the pipeline based on settings
+            if boot_runs > 1:
+                # Use BBRENT selection (Bootstrapped Boosted RENT)
+                feature_selection_pipeline.add_step(
+                    BBRENTStep(
+                        criteria_threshold=criteria_threshold,
+                        n_trials=n_trials,
+                        n_bootstrap=boot_runs,
+                        bootstrap_ratio=boot_ratio,
+                        threshold_percentage=thres_percentage,
+                        return_frequency=return_freq,
+                        boosting=boosting
+                    )
+                )
+            else:
+                # Add individual steps
+                # Add variance filter
+                feature_selection_pipeline.add_step(VarianceFilterStep())
+                
+                # Add ICC filter
+                feature_selection_pipeline.add_step(ICCFilterStep(ICC_form=ICC_form))
+                
+                # Add statistical filter (T-test or ANOVA)
+                feature_selection_pipeline.add_step(TTestFilterStep(p_threshold=_s.get('p_thres', 0.01)))
+                
+                # Add normalization
+                feature_selection_pipeline.add_step(NormalizationStep())
+                
+                # Add supervised selection
+                feature_selection_pipeline.add_step(
+                    SupervisedSelectionStep(
+                        criteria_threshold=criteria_threshold,
+                        n_trials=n_trials,
+                        boosting=boosting
+                    )
+                )
+            
+            # Update the selector
+            self.saved_state['selector'] = feature_selection_pipeline
+            self._logger.info(f"Updated feature selection pipeline with settings: {pprint.pformat(_s)}")
 
         if 'Extractor' in settings_loaded.keys():
             _s = settings_loaded['Extractor']
@@ -366,48 +475,149 @@ class Controller(object):
             img_feat (pd.DataFrame):
                 Input features. The rows should be datapoints and the columns should be features.
         """
-        return self.model_builder.predict(self.selector.predict(img_feat))
+        return self.model_builder.predict(self.selector.transform(img_feat))
 
     def save(self, f: Path) -> int:
+        """Save the controller state to a file or directory.
+        
+        This method saves the state of the controller and its components
+        (extractor, selector, model) to the specified path.
+        
+        Args:
+            f (Path): The path to save the state to. Can be a file or directory.
+            
+        Returns:
+            int: 0 on success
+            
+        Raises:
+            ArithmeticError: If there is nothing to save.
+        """
         if any([v is None for v in self.saved_state.values()]):
-            raise ArithmeticError("There are nothing to save.")
+            raise ArithmeticError("There is nothing to save.")
+        
         f = Path(f)
-        _logger_store = {}
+        
+        # Ensure the parent directory exists
+        f.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Create a temporary state dict without loggers
+        state_to_save = self.saved_state.copy()
+        
+        # Handle component objects separately
         for key in ['selector', 'extractor', 'model']:
-            # temporally remove loggers because it will block joblib.dump from working properly
-            _logger_store[key] = self.saved_state[key]._logger
-            self.saved_state[key]._logger = None
-
-        joblib.dump(self.saved_state, filename=f.with_suffix('.ctl'))
-        # Return the logger
-        for key in ['selector', 'extractor', 'model']:
-            self.saved_state[key]._logger = _logger_store[key]
-        del _logger_store # Manually delete the reference to ensure it will release memory after running
+            if key in state_to_save and state_to_save[key] is not None:
+                # Create a subdirectory for each component
+                component_dir = f.parent / key
+                component_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Get component state without logger
+                component_state = state_to_save[key].saved_state.copy()
+                if '_logger' in component_state:
+                    component_state.pop('_logger')
+                
+                # Save component state
+                from .utils import StateManager
+                StateManager.save_state(component_state, component_dir / f"{key}_state.tar.gz")
+                
+                # Remove component from main state dict
+                state_to_save[key] = f"{key}_saved"
+        
+        # Save main state
+        from .utils import StateManager
+        StateManager.save_state(state_to_save, f)
         return 0
 
     def load(self, f: Path) -> None:
         r"""
-        Load att `self.saved_state`. The file saved should be a dictionary containing key 'selected_features', which
-        points to a list of features in the format of pd.MultiIndex or tuple
+        Load the controller state from a file or directory.
+        
+        This method loads the saved state of the controller and its components
+        (extractor, selector, model) from the specified path. The state should
+        have been previously saved using the `save` method.
+        
+        Args:
+            f (Path): The path to load the state from. Can be a file or directory.
+            
+        Raises:
+            FileNotFoundError: If the specified path does not exist.
+            TypeError: If the loaded state is not a dictionary.
+            Exception: If there is an error loading a component state.
         """
-        assert Path(f).is_file(), f"Cannot open file {f}"
-        d = joblib.load(f)
-        if not isinstance(d, dict):
-            raise TypeError("State loaded is incorrect!")
-        self.saved_state.update(d)
-        if not 'setting_file_stream' in self.saved_state:
-            self.read_setting(Path(self.saved_state['setting']))
-        else:
-            # Read from saved file stream if possible
-            self.read_setting(None)
-
-        #TODO: write checks for each of the modules and make sure all are ready for inference.
-        # note that for FE `with_norm` more checks are needed.
-
-        # Set up loggers
-        for key in ['selector', 'extractor', 'model']:
-            self.saved_state[key]._logger = MNTSLogger[type(self.saved_state[key]).__name__]
-        self.saved_state['predict_ready'] = True
+        f = Path(f)
+        if not (f.is_file() or f.is_dir()):
+            raise FileNotFoundError(f"Path does not exist: {f}")
+        
+        # Load using StateManager
+        try:
+            from .utils import StateManager
+            loaded_state = StateManager.load_state(f)
+            
+            if not isinstance(loaded_state, dict):
+                raise TypeError("State loaded is incorrect!")
+            
+            # Load component states
+            for key in ['selector', 'extractor', 'model']:
+                if key in loaded_state and loaded_state[key] == f"{key}_saved":
+                    # Load component state from its subdirectory
+                    component_dir = f.parent / key
+                    component_file = component_dir / f"{key}_state.tar.gz"
+                    
+                    # Check if component file or directory exists
+                    if component_file.exists():
+                        component_path = component_file
+                    elif component_dir.exists():
+                        component_path = component_dir
+                    else:
+                        self._logger.warning(f"Component {key} state not found at {component_file} or {component_dir}")
+                        continue
+                    
+                    try:
+                        # Load component state
+                        component_state = StateManager.load_state(component_path)
+                        
+                        # Initialize component if it doesn't exist
+                        if key not in self.saved_state or self.saved_state[key] is None:
+                            if key == 'extractor':
+                                self.saved_state[key] = FeatureExtractor()
+                            elif key == 'selector':
+                                self.saved_state[key] = FeatureSelectionPipeline(name="LoadedFeatureSelectionPipeline")
+                            elif key == 'model':
+                                self.saved_state[key] = ModelBuilder()
+                        
+                        # Update component state
+                        self.saved_state[key].saved_state.update(component_state)
+                        
+                        # Recreate logger
+                        self.saved_state[key]._logger = MNTSLogger[type(self.saved_state[key]).__name__]
+                    except Exception as e:
+                        self._logger.warning(f"Error loading component state for {key}: {str(e)}")
+                        self._logger.warning(f"Component {key} may not be fully initialized.")
+            
+            # Update other state
+            for key, value in loaded_state.items():
+                if key not in ['selector', 'extractor', 'model'] or value != f"{key}_saved":
+                    self.saved_state[key] = value
+                    
+            if not 'setting_file_stream' in self.saved_state and 'setting' in self.saved_state:
+                try:
+                    self.read_setting(Path(self.saved_state['setting']))
+                except Exception as e:
+                    self._logger.warning(f"Error reading settings: {str(e)}")
+            else:
+                # Read from saved file stream if possible
+                try:
+                    self.read_setting(None)
+                except Exception as e:
+                    self._logger.warning(f"Error reading settings from file stream: {str(e)}")
+                
+            self.saved_state['predict_ready'] = True
+            
+        except FileNotFoundError as e:
+            self._logger.error(f"Failed to load state: {str(e)}")
+            raise
+        except Exception as e:
+            self._logger.error(f"Unexpected error loading state: {str(e)}")
+            raise
 
     @property
     def selected_features(self):
