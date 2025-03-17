@@ -383,7 +383,8 @@ def get_radiomics_features_from_folder(im_dir: Path,
 
 class FeatureExtractor(object):
     r"""`FeatureExtractor` is a class for extracting features from image data based on given parameters.
-    Features extracted are stored in a pandas DataFrame.
+    Features extracted are stored in a pandas DataFrame. The class provides state management functionality
+    for saving and loading extraction configurations and results.
 
     Attributes:
         DEFAULT_NORM_STATE (pathlib.Path):
@@ -397,21 +398,28 @@ class FeatureExtractor(object):
             Defaults to None.
         by_slice (int):
             The slice number to be used. Defaults to -1.
-        _extracted_features (pd.DataFrame
-            ): A DataFrame storing the features extracted.
-        _logger (Logger
-            ): A logging object.
+        _extracted_features (pd.DataFrame):
+            A DataFrame storing the features extracted.
+        _logger (Logger):
+            A logging object.
+        saved_state (dict):
+            Dictionary storing the current state of the extractor including configuration parameters,
+            extracted features, and processing history. Updated when loading state from files.
 
     Example:
         >>> fe = FeatureExtractor()
         >>> fe.extract_features(im_path, seg_path, idlist=id_list, param_file=param_file_path)
         >>> fe.save_features(output_path)
+        >>> fe.save("extractor_state.tar.gz")  # Save current state
+        >>> fe.load("extractor_state.tar.gz")  # Load previously saved state
 
     .. notes::
         The `param_file` attribute can be a path pointing to a YAML file containing extraction parameters.
         Alternatively, it can be a string formatted in YAML, which directly specifies the parameters.
         The `idlist` attribute should be a list of identifiers corresponding to the images from which features
         will be extracted.
+        The class maintains internal state through the `saved_state` dictionary, which can be persisted
+        and restored through save/load methods.
     """
     DEFAULT_NORM_STATE = Path(__file__).parent.joinpath("assets/t2wfs").resolve()
 
@@ -428,6 +436,8 @@ class FeatureExtractor(object):
             'extracted_features': None
         }
         self.param_file  = param_file # This converts file to plain text.
+        self.idlist = idlist
+        self.id_globber = id_globber
 
         # Update saved_state dictionary with provided kwargs
         self.saved_state.update(kwargs)
@@ -735,17 +745,21 @@ class FeatureExtractor(object):
             G = MNTSFilterGraph.CreateGraphFromYAML(f.name)
             self._logger.info(f"Using normalization graph:\n{G}")
 
+            # Load training state if graph requires training
+            if G.requires_training:
+                norm_state = self.saved_state['norm_state_file'] if norm_state_file is None else norm_state_file
+                norm_state, norm_state_temp_dir = self.load_norm_state(norm_state)
+                # Raise error if state continues to be nothing
+                if norm_state is None:
+                    raise FileNotFoundError(f"Graph require training but cannot locate graph state in "
+                                            f"{str(norm_state_file)}")
 
-            # Override instance attribute if specified in arguments
-            norm_state = self.saved_state['norm_state_file'] if norm_state_file is None else norm_state_file
-            norm_state, norm_state_temp_dir = self.load_norm_state(norm_state)
-            # Raise error if state continues to be nothing
-            if norm_state is None:
-                raise FileNotFoundError(f"Cannot open normaliation graph state!")
 
             # normalize the images
-            command = f"--input {im_path} --state-dir {str(norm_state)} --output {temp_dir_im} --file {f.name} --verbose " \
+            command = f"--input {im_path} --output {temp_dir_im} --file {f.name} --verbose " \
                       f"-n 12".split(' ')
+            if G.requires_training:
+                command.extend(['--state-dir', f'{str(norm_state)}'])
             self._logger.debug(f"Command for image normalization: {command}")
             self._logger.info("Start normalization...")
             _start_time = time.time()
@@ -754,8 +768,10 @@ class FeatureExtractor(object):
             # normalize the segmentation for spatial transforms
             # For each segmentation input run once
             for _seg_path, _temp_seg_out in zip(seg_path, temp_dir_seg):
-                command = f"--input {_seg_path} --state-dir {str(norm_state)} --output {str(_temp_seg_out)} --file {f.name} --verbose " \
+                command = f"--input {_seg_path} --output {str(_temp_seg_out)} --file {f.name} --verbose " \
                           f"-n 12 --force-segment".split(' ')
+                if G.requires_training:
+                    command.extend(['--state-dir', f'{str(norm_state)}'])
                 self._logger.debug(f"Command for segment normalization: {command}")
                 run_graph_inference(command)
             _end_time = time.time()

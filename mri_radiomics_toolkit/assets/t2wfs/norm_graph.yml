@@ -1,0 +1,17 @@
+SpatialNorm:
+    out_spacing: [0.4492, 0.4492, 0]
+
+HuangThresholding:
+    closing_kernel_size: 10
+    _ext:
+        upstream: 0
+        is_exit: True
+
+N4ITKBiasFieldCorrection:
+    _ext:
+        upstream: [0, 1]
+
+NyulNormalizer:
+    _ext:
+        upstream: [2, 1]
+        is_exit: True

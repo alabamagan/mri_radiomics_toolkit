@@ -136,3 +136,6 @@ lab
 data
 *.xlsx
 *.nii.gz
+.qodo
+
+.vscode
