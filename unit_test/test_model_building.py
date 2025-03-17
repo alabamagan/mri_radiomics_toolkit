@@ -164,6 +164,7 @@ class Test_ModelBuilding(unittest.TestCase):
         """Test the save/load mechanism for ModelBuilder"""
         import tempfile
         from pathlib import Path
+        from pprint import pformat
         
         # Setup the configurations
         features = pd.DataFrame(np.random.random(size=(40, 10)))
@@ -175,7 +176,7 @@ class Test_ModelBuilding(unittest.TestCase):
         
         # Test save/load with the new mechanism
         with tempfile.TemporaryDirectory() as tempdir:
-            save_dir = Path(tempdir) / 'model_state'
+            save_dir = Path(tempdir) / 'model_state.tar.gz'
             
             # Save the model
             model.save(save_dir)
@@ -184,13 +185,15 @@ class Test_ModelBuilding(unittest.TestCase):
             new_model = ModelBuilder()
             new_model.load(save_dir)
             
-            # Check if states match
-            self.assertEqual(model.saved_state['best_params'], new_model.saved_state['best_params'])
-            
+            # Check if states match, the instance will be different so stringify them.
+            self.assertEqual(pformat(model.saved_state), pformat(new_model.saved_state))
+
             # Check if the loaded model can predict
             predictions1 = model.predict(features)
             predictions2 = new_model.predict(features)
             pd.testing.assert_frame_equal(predictions1, predictions2)
+
+
 
 
 if __name__ == '__main__':

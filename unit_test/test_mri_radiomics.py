@@ -4,6 +4,9 @@ import subprocess
 import tempfile
 import shutil
 import pprint
+from rich.traceback import install
+install(show_locals=True)
+
 from pathlib import Path
 
 import sklearn.model_selection
@@ -27,7 +30,7 @@ class Test_pipeline(unittest.TestCase):
         
     def setUp(self) -> None:
         self._logger = MNTSLogger['unittest']
-        self._globber = "^[0-9]+"
+        self._globber = "^MRI_[0-9]+"
         self._p_setting = Path('test_data/assets/sample_pyrad_settings.yml')
         self._transform = Path('test_data/assets/sample_augment_transform.yml')
         self.temp_dir_obj = tempfile.TemporaryDirectory()
@@ -39,10 +42,30 @@ class Test_pipeline(unittest.TestCase):
     def test_feature_extractor_w_norm(self):
         p_im = Path('test_data/images_not_normalized/')
         p_seg = Path('test_data/segment/')
+        norm_graph =\
+        """
+        SpatialNorm:
+            out_spacing: [0.45, 0.45, 0]
+        
+        HuangThresholding:
+            closing_kernel_size: 10
+            _ext:
+                upstream: 0 
+                is_exit: True
+        
+        N4ITKBiasFieldCorrection:
+            _ext:
+                upstream: [0, 1]
+            
+        ZScoreNorm:
+            _ext:
+                upstream: [2, 1]
+                is_exit: True
+        """ # Use this version that does not need training
 
         # Create feature extractor
         self._logger.info("{:-^50s}".format(" Testing feature extraction "))
-        fe = FeatureExtractor(id_globber=self._globber)
+        fe = FeatureExtractor(id_globber=self._globber, norm_graph=norm_graph)
         fe.param_file = self._p_setting
         df = fe.extract_features_with_norm(p_im, p_seg, param_file = self._p_setting)
         fe.save_features(self._p_setting.with_name('sample_features.xlsx'))
@@ -83,13 +106,13 @@ class Test_pipeline(unittest.TestCase):
 
         # unit_test save state
         self._logger.info("{:-^50s}".format(" Testing save state "))
-        fe.save(Path(self.temp_dir))
-        self.assertTrue(Path(self.temp_dir).joinpath('saved_state.fe').is_file())
+        fe.save(Path(self.temp_dir) / 'fe.tar.gz')
+        self.assertTrue((Path(self.temp_dir) / 'fe.tar.gz').is_file())
 
         # unit_test load state
         self._logger.info("{:-^50s}".format(" Testing load state "))
         _fe = FeatureExtractor(id_globber=self._globber)
-        _fe.load(Path(self.temp_dir).joinpath('saved_state.fe'))
+        _fe.load(Path(self.temp_dir).joinpath('fe.tar.gz'))
         self._logger.debug(f"Loaded state: {_fe.saved_state}")
         _df = fe.extract_features(p_im, p_seg)
 
@@ -451,8 +474,8 @@ class Test_pipeline(unittest.TestCase):
             
         # Verify that the settings use boot_runs > 1 which should trigger BBRENTStep
         self.assertIn('Selector', settings)
-        self.assertIn('boot_runs', settings['Selector'])
-        self.assertGreater(settings['Selector']['boot_runs'], 1)
+        self.assertIn('n_bootstrap', settings['Selector'])
+        self.assertGreater(settings['Selector']['n_bootstrap'], 1)
         
         # Create a controller with the settings
         ctl = Controller(setting=p_controller_setting)

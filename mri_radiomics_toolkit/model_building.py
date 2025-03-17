@@ -144,7 +144,7 @@ def cv_grid_search(train_features: pd.DataFrame,
             split = cv(train_targets, train_targets.values.ravel())
 
         grid = GridSearchCV(clf, n_jobs=n_jobs, param_grid=param_grid, scoring=scoring,
-                            cv=split, verbose=MNTSLogger.is_verbose, **kwargs)
+                            cv=split, verbose=False, **kwargs)
 
         try:
             grid.fit(train_features.values, train_targets.values.ravel(), **fit_params)
@@ -306,6 +306,8 @@ class ModelBuilder(object):
                                 self._logger.warning(f"Estimator {key} does not have predict method")
                         except Exception as e:
                             self._logger.warning(f"Error checking estimator {key}: {str(e)}")
+                    else:
+                        self._logger.debug(f"Loaded estimator ({key}): {estimator = }")
             
             # Recreate logger
             self._logger = MNTSLogger[self.__class__.__name__]

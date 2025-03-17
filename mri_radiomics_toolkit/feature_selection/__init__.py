@@ -14,6 +14,7 @@ from .normalization import NormalizationStep
 from .bootstrapped_selection import BootstrappedSelectionStep
 from .sklearn_compat import ElasticNetSelector
 from .bbrent import BBRENTStep
+from .cox_selection import CoxRegressionSelector
 
 __all__ = [
     # New modular implementation
@@ -28,4 +29,5 @@ __all__ = [
     'BootstrappedSelectionStep',
     'ElasticNetSelector',
     'BBRENTStep',
+    'CoxRegressionSelector',
 ] 
